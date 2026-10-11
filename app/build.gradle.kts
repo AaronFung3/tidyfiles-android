@@ -44,6 +44,12 @@ val ncnnSdkDir = providers.gradleProperty("ncnnSdkDir").orNull
 val qnnHeadersDir = rootProject.file("third_party/qnn-include")
 // KMK <--
 
+// KMK -->
+// QNN asset stripping for non-arm64 split APKs, enabled with `-Pexclude-qnn-assets`.
+// (logic lives in strip-qnn.gradle.kts to keep the main build file small)
+apply(from = "strip-qnn.gradle.kts")
+// KMK <--
+
 android {
     namespace = "eu.kanade.tachiyomi"
 
