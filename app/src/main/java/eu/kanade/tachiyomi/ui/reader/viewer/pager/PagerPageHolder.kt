@@ -17,6 +17,7 @@ import eu.kanade.tachiyomi.ui.reader.viewer.ReaderProgressIndicator
 import eu.kanade.tachiyomi.ui.webview.WebViewActivity
 import eu.kanade.tachiyomi.util.waifu2x.ImageEnhancementCache
 import eu.kanade.tachiyomi.widget.ViewPagerAdapter
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.delay
@@ -87,18 +88,28 @@ class PagerPageHolder(
         mangaId = viewer.activity.viewModel.manga?.id ?: -1L
         chapterId = page.chapter.chapter.id ?: -1L
         readerPage = page
+        // Recovery after a failed enhanced-cache load re-displays the original page
+        // through the same non-mutating transform the first load used.
+        originalImageSourceFactory = { buildOriginalDisplaySource() }
         if (extraPage == null) {
             enhancedImageSourceFactory = { file ->
-                processEnhanced(Buffer().readFrom(file.inputStream()))
+                ImageEnhancementCache.readCachedImage(file)?.let {
+                    processEnhanced(Buffer().readFrom(it.inputStream()))
+                }
             }
         } else {
             // SY merged double page: enhance both halves and merge them for display.
             secondaryPage = extraPage
             enhancedMergeSourceFactory = { primary, secondary ->
-                mergeEnhancedPages(
-                    Buffer().readFrom(primary.inputStream()),
-                    Buffer().readFrom(secondary.inputStream()),
-                )
+                val primarySource = ImageEnhancementCache.readCachedImage(primary)?.let { Buffer().readFrom(it.inputStream()) }
+                val secondarySource = ImageEnhancementCache.readCachedImage(secondary)?.let { Buffer().readFrom(it.inputStream()) }
+                if (primarySource == null || secondarySource == null) {
+                    primarySource?.close()
+                    secondarySource?.close()
+                    null
+                } else {
+                    mergeEnhancedPages(primarySource, secondarySource)
+                }
             }
         }
         // KMK <--
@@ -208,10 +219,24 @@ class PagerPageHolder(
         try {
             val (source, isAnimated, background) = withIOContext {
                 // KMK --> Prefer the cached enhanced page when available. The cached image is
-                // already a full page; only the display transform is re-applied here.
+                // already a full page; only the display transform is re-applied here. The
+                // snapshot is validated (and a corrupt entry discarded) before it is decoded;
+                // when the entry vanished or is unreadable, fall back to the original stream
+                // so the page still renders.
                 val enhancedFile = currentEnhancedFile(page)
-                if (enhancedFile != null) {
-                    val itemSource = processEnhanced(Buffer().readFrom(enhancedFile.inputStream()))
+                val enhancedSource = enhancedFile?.let { file ->
+                    try {
+                        ImageEnhancementCache.readCachedImage(file)?.let {
+                            processEnhanced(Buffer().readFrom(it.inputStream()))
+                        }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        null
+                    }
+                }
+                if (enhancedSource != null) {
+                    val itemSource = enhancedSource
                     val isAnimated = ImageUtil.isAnimatedAndSupported(itemSource)
                     val background = if (!isAnimated && viewer.config.automaticBackground) {
                         ImageUtil.chooseBackground(context, itemSource.peek())
@@ -358,6 +383,33 @@ class PagerPageHolder(
             processingBackend = readerPreferences.realCuganProcessingBackend().get(),
         )
         return ImageEnhancementCache.getCachedImage(mangaId, chapterId, targetPage.index, configHash, targetPage.enhancementKeySuffix)
+    }
+    // KMK <--
+
+    // KMK -->
+    /**
+     * Builds the original (non-enhanced) display source for the bound page(s), used by the
+     * view's enhanced-cache recovery. It reuses the display transforms that never mutate
+     * page state ([processEnhanced] / [mergeEnhancedPages]) so a recovery cannot re-insert
+     * a split sibling or re-run layout side effects.
+     */
+    private fun buildOriginalDisplaySource(): BufferedSource? {
+        return try {
+            val primaryStream = page.stream?.invoke() ?: return null
+            val primary = Buffer().readFrom(primaryStream)
+            val secondaryStreamFn = extraPage?.stream
+            if (secondaryStreamFn != null) {
+                val secondary = Buffer().readFrom(secondaryStreamFn.invoke())
+                mergeEnhancedPages(primary, secondary)
+            } else {
+                processEnhanced(primary)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logcat(LogPriority.WARN, e) { "PagerPageHolder: Unable to rebuild the original display source" }
+            null
+        }
     }
     // KMK <--
 
@@ -579,6 +631,10 @@ class PagerPageHolder(
      * Called when an image fails to decode.
      */
     override fun onImageLoadError(error: Throwable?) {
+        // KMK -->
+        // A failed enhanced-cache load must not hide the readable original page.
+        if (recoverEnhancedCacheLoad(error)) return
+        // KMK <--
         super.onImageLoadError(error)
         setError(error)
     }
