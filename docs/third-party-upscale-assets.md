@@ -40,6 +40,16 @@ sources:
 | `span-nomosuni/2x-NomosUni-SPAN-multijpg-ldl` | see `ATTRIBUTION.txt` in the directory |
 | `anime4k/*.glsl` | https://github.com/bloc97/Anime4K |
 
+Note: the MIU APK bundles none of the `w2xex-esrgan/` ncnn models — upstream
+downloads `<stem>.param`/`.bin` from the HuggingFace repo at runtime into
+`cache/w2xex-esrgan/<stem>/`. The HuggingFace files live flat at the repo
+root; upstream's on-device layout (and the loader's `assetPath`) is one
+subdirectory per model stem, which is what this repository mirrors under
+`assets/` since fix/w2xex-asset-layout. All six vendored files
+(`.param` + `.bin` per model) are byte-identical to HuggingFace; `*.param`
+is marked `binary` in `.gitattributes` so the CRLF line endings of the
+source files survive check-in.
+
 ## Licenses
 
 | Component | License (per upstream) | Notes |
@@ -58,6 +68,18 @@ sources:
 extracted from MIU's release. Their integrity is covered by the checksums
 below, but the legal review of Qualcomm's redistribution terms has not been
 done. Do not publish builds containing them without that review.
+
+**Known broken artifact:** the SPAN FP16 QNN contexts
+(`qnn-contexts/span-nomosuni-x2.v*.bin`) are byte-identical across all five
+HTP architectures (every other model's FP16 context is per-arch), and the
+shared artifact executes successfully on HTP v79 but produces an all-black
+output (verified on SM8750 against MIU v1.3.12, whose APK ships the exact
+same files — 150/150 contexts byte-identical to this repository). Upstream
+master still stages the same context, so no fixed export exists to pull.
+Until the context is re-exported with the QNN SDK pipeline, SPAN on the NPU
+backend is only usable with INT8 precision (whose contexts are per-arch and
+verified working); FP16 + NPU yields black pages that get cached, so SPAN
+users should pick INT8 or the Vulkan backend.
 
 ## Verification
 
