@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.ui.reader.viewer
 
+import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Bitmap
@@ -153,6 +154,8 @@ open class ReaderPageImageView @JvmOverloads constructor(
     private var pageView: View? = null
     private var currentLoadedUri: String? = null
     private var lastStatusText: String? = null
+    private var lastStatusBlink = false
+    private var statusBlinkAnimator: ObjectAnimator? = null
 
     // KMK -->
     // Incremented on every new image binding (and on recycle/detach); async enhanced-cache
@@ -232,11 +235,13 @@ open class ReaderPageImageView @JvmOverloads constructor(
                     .collect { enabled ->
                         withUIContext {
                             if (!enabled) {
+                                stopStatusBlink()
                                 statusView.isVisible = false
-                            } else if (lastStatusText != null) {
+                            } else if (!lastStatusText.isNullOrEmpty()) {
                                 statusView.text = lastStatusText
                                 statusView.isVisible = true
                                 statusView.bringToFront()
+                                if (lastStatusBlink) startStatusBlink() else stopStatusBlink()
                             }
                         }
                     }
@@ -281,36 +286,54 @@ open class ReaderPageImageView @JvmOverloads constructor(
         }
     }
 
-    private fun updateStatus(text: String?) {
+    private fun updateStatus(text: String?, blink: Boolean = false) {
         lastStatusText = text
+        lastStatusBlink = blink
         post {
-            if (suppressDefaultStatus) {
+            if (suppressDefaultStatus || !realCuganShowStatus || text.isNullOrEmpty()) {
+                stopStatusBlink()
                 statusView.isVisible = false
                 return@post
             }
-            if (!realCuganShowStatus || text == null) {
-                statusView.isVisible = false
-                return@post
-            }
-            statusView.text = text
+            if (statusView.text != text) statusView.text = text
             statusView.isVisible = true
             statusView.bringToFront()
+            if (blink) startStatusBlink() else stopStatusBlink()
         }
+    }
+
+    /**
+     * Alternating show/hide pulse for the active-enhancement label. The polling loop
+     * re-issues the same status every 500ms, so [startStatusBlink] must be idempotent.
+     */
+    private fun startStatusBlink() {
+        if (statusBlinkAnimator?.isRunning == true) return
+        statusBlinkAnimator = ObjectAnimator.ofFloat(statusView, View.ALPHA, 1f, 0f).apply {
+            duration = 700L
+            repeatMode = ValueAnimator.REVERSE
+            repeatCount = ValueAnimator.INFINITE
+            start()
+        }
+    }
+
+    private fun stopStatusBlink() {
+        statusBlinkAnimator?.cancel()
+        statusBlinkAnimator = null
+        statusView.alpha = 1f
     }
 
     // KMK -->
     /**
-     * Tag appended to enhancement status labels, e.g. "（QNN）".
-     *
-     * Purely mirrors the configured backend so the label always matches the
-     * config used for cache keys; no runtime probing.
+     * Configured backend name used as the status label once a page is processed (static)
+     * and while it is actively enhancing (blinking), e.g. "QNN". Mirrors the value feeding
+     * the cache config hash so the label always matches the config; no runtime probing.
      */
-    private fun enhancementBackendSuffix(): String {
+    private fun enhancementBackendName(): String {
         if (!realCuganEnabled) return ""
         return if (preferences.realCuganProcessingBackend().get() == Waifu2x.PROCESSING_BACKEND_QUALCOMM_NPU) {
-            "（QNN）"
+            "QNN"
         } else {
-            "（Vulkan）"
+            "Vulkan"
         }
     }
     // KMK <--
@@ -631,7 +654,7 @@ open class ReaderPageImageView @JvmOverloads constructor(
                 updateStatus(context.stringResource(KMR.strings.reader_status_raw))
             } else if (secondary != null && secondaryFile == null) {
                 // Waiting for the sibling half - keep both queued and let polling swap once ready.
-                updateStatus(context.stringResource(KMR.strings.reader_status_processing) + enhancementBackendSuffix())
+                updateStatus(context.stringResource(KMR.strings.reader_status_processing))
                 enqueueEnhancement(mId, cId, pIdx, highPriority = true)
                 enqueueSecondaryIfNeeded(mId, configHash, highPriority = true)
                 startEnhancementPolling(mId, cId, pIdx, configHash)
@@ -678,13 +701,13 @@ open class ReaderPageImageView @JvmOverloads constructor(
                             }
                         }
                     } else {
-                        updateStatus(context.stringResource(KMR.strings.reader_status_processed) + enhancementBackendSuffix())
+                        updateStatus(enhancementBackendName())
                     }
                 } else if (ImageEnhancementCache.isSkipped(mId, cId, pIdx, configHash, pageVariant)) {
                     updateStatus(context.stringResource(KMR.strings.reader_status_raw))
                 } else {
                     // Not in cache, not skipped - ensure it's being processed with high priority
-                    updateStatus(context.stringResource(KMR.strings.reader_status_processing) + enhancementBackendSuffix())
+                    updateStatus(context.stringResource(KMR.strings.reader_status_processing))
                     enqueueEnhancement(mId, cId, pIdx, highPriority = true)
                     enqueueSecondaryIfNeeded(mId, configHash, highPriority = true)
 
@@ -914,7 +937,7 @@ open class ReaderPageImageView @JvmOverloads constructor(
         }
         val uriString = file.toURI().toString()
         currentCachedFile = file
-        updateStatus(context.stringResource(KMR.strings.reader_status_processed) + enhancementBackendSuffix())
+        updateStatus(enhancementBackendName())
 
         val activeView = pageView as? SubsamplingScaleImageView
         if (activeView != null) {
@@ -1166,7 +1189,7 @@ open class ReaderPageImageView @JvmOverloads constructor(
             enhancedBitmap?.recycle()
             enhancedBitmap = null
             isSettingProcessedImage = false
-            updateStatus(context.stringResource(KMR.strings.reader_status_processing) + enhancementBackendSuffix())
+            updateStatus(context.stringResource(KMR.strings.reader_status_processing))
         }
 
         requeueEnhancement(mId, cId, pIdx, triggerData, streamFn, forceCurrentPage)
@@ -1366,7 +1389,7 @@ open class ReaderPageImageView @JvmOverloads constructor(
                         setImageWithCurrentCrop(ImageSource.inputStream(source.inputStream()))
                         currentLoadedUri = cachedFile.toURI().toString()
                         isVisible = true
-                        updateStatus(context.stringResource(KMR.strings.reader_status_processed) + enhancementBackendSuffix())
+                        updateStatus(enhancementBackendName())
                     } else {
                         viewScope.launchIO {
                             healInvalidEnhancedCache(
@@ -1511,21 +1534,17 @@ open class ReaderPageImageView @JvmOverloads constructor(
 
                     // Check progress status
                     val pid = Waifu2x.getProgressId()
+                    val requested = ImageEnhancer.hasRequest(mId, cId, pIdx, pageVariant) || isSecondaryRequested(mId)
                     if (pid == pIdx || (secondary != null && pid == secondary.index)) {
                         wasEnhancing = true
-                        val rawProgress = Waifu2x.getProgressPercent()
-                        if (rawProgress in 0..100) {
-                            updateStatus(context.stringResource(KMR.strings.reader_status_enhancing_progress, rawProgress) + enhancementBackendSuffix())
-                        } else {
-                            val dots = (rawProgress % 3).let { if (it < 0) -it else it } + 1
-                            updateStatus(context.stringResource(KMR.strings.reader_status_enhancing) + ".".repeat(dots) + enhancementBackendSuffix())
-                        }
-                    } else if (ImageEnhancer.hasRequest(mId, cId, pIdx, pageVariant) || isSecondaryRequested(mId)) {
-                        if (!wasEnhancing) {
-                            updateStatus(context.stringResource(KMR.strings.reader_status_queued) + enhancementBackendSuffix())
-                        } else {
-                            updateStatus(context.stringResource(KMR.strings.reader_status_finishing) + enhancementBackendSuffix())
-                        }
+                        // Actively enhancing (or its tail while a request is still
+                        // registered): show only the backend name with a blinking pulse
+                        // so the label stays small on the page.
+                        updateStatus(enhancementBackendName(), blink = true)
+                    } else if (requested && wasEnhancing) {
+                        updateStatus(enhancementBackendName(), blink = true)
+                    } else if (requested) {
+                        updateStatus(context.stringResource(KMR.strings.reader_status_queued))
                     } else {
                         // Not in queue, not cached - might need to re-enqueue
                         val current = currentGlobalPageIndex
@@ -1567,6 +1586,7 @@ open class ReaderPageImageView @JvmOverloads constructor(
         processingJob?.cancel()
         processingJob = null
 
+        stopStatusBlink()
         enhancedOverlay.setImageBitmap(null)
         enhancedBitmap?.recycle()
         enhancedBitmap = null

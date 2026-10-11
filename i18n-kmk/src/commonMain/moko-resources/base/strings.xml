@@ -270,10 +270,6 @@
     <string name="reader_none">None</string>
     <string name="reader_conservative">Conservative</string>
     <string name="reader_status_raw">RAW</string>
-    <string name="reader_status_processed">PROCESSED</string>
     <string name="reader_status_processing">PROCESSING</string>
     <string name="reader_status_queued">QUEUED</string>
-    <string name="reader_status_finishing">FINISHING...</string>
-    <string name="reader_status_enhancing">ENHANCING</string>
-    <string name="reader_status_enhancing_progress">ENHANCING... %1$d%%</string>
 </resources>
