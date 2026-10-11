@@ -4,6 +4,8 @@
 被审对象:`komikku feature/image-upscale` 分支相对 `master` 的全部变更。
 结论先行:**核心链路(NCNN/Vulkan 推理、模型管理、Coil 解码管线、阅读器集成、设置 UI、QNN/NPU)已完整移植并在 SM8750 真机可用;发现并修复 2 个移植缺陷;另有 7 处有意差异(全部有理由),无未解释的遗漏。**
 
+> 后续同步:上游 1.3.11 / 1.3.12 的移植审查见 [§6](#6-1311--1312-同步审查--syncupscale-1-3-11)。
+
 ---
 
 ## 1. 逐文件对账
@@ -108,3 +110,69 @@
 1. **仓库体积**:third_party(ncnn 99MB + qnn-include 1.9MB)、assets(~527MB)、libQnnModelDlc(3.2MB)拟全部入库(上游同样入库),仓库将增 ~630MB。备选:Git LFS / 下载脚本 / 只保留 v79 上下文 — **待确认后提交**。
 2. `reader_image_enhancement_toast` 字符串目前无引用(为底栏按钮预留)。
 3. NPU 上下文为静态资产;若未来要为新架构重新生成,需上游 `tools/qnn` 的 Docker 管线(未移植)。
+
+## 6. 1.3.11 / 1.3.12 同步审查 — sync/upscale-1-3-11
+
+参照系:`HaoweiLi97/mihon_img_upscale` 053c33caf(Release 1.3.11,父 65e3f1900)与 3e5aee233(Release 1.3.12,父 053c33caf)中增强/阅读器相关的改动子集。
+被审对象:`sync/upscale-1-3-11` 分支相对 `master` 的 3 个提交(38382d22f、dc94dce90、8318dea84;18 文件,+1202/−348)。
+结论先行:**三个提交均与提交信息声明一致;7 个原生 C++ 文件 + 2 个宿主测试与上游字节级一致;Kotlin 层全部偏差可归因到 §1–§2 的既定 KMK 适配;无范围蔓延、无实现错误。**
+
+### 6.1 逐提交对账
+
+**38382d22f — 1.3.11 原生与解码修复**
+
+| 上游改动 | 状态 | 说明 |
+|---|---|---|
+| `monochrome_guard.h`(新) | ✅ 原样 | 64×64 快速拒绝采样、NEON + 可移植小端块路径、0.05% 弱色度噪声预算;替换 JNI 层的输入 RGB→灰采样归一化,有色调扫描与小块彩色区域保留源像素,中性页的伪色仍由共享输出通道抑制 |
+| `periodic_texture_guard.h` | ✅ 原样 | 正交轴 70% 方向覆盖要求(局部笔画簇不再缩整块)、per-core TilePlan/Analysis 缓存、AxisTransform 圆整缩放比(Vulkan/QNN 共享)、占用率提前退出 |
+| 75% shrink-and-restore 守卫限制到中性 Real-CUGAN Pro 页 | ✅ 一致 | `nativeInitRealCugan` 增加 `isPro` 参数(JNI → `g_realcugan_pro` → 守卫条件 `g_realcugan_pro && is_monochrome_input`);denoise3 图名启发式移除 |
+| `TachiyomiImageDecoder` 源分辨率解码 | ✅ 一致 | 增强开启时按源分辨率解码,推理前不再被 `inSampleSize` 采样丢失细节 |
+| `ImageEnhancementCache` 修订号 | ✅ 一致 | 新 `_dv` 输入解码修订(=1);纹理守卫修订 `_tv`(=3)条件 `model == 1 \|\| (model == 0 && noise == 3)`(全部 Real-CUGAN Pro + SE denoise3);monochrome 修订 `_nv`(=3);bundle/QNN 上下文版本 16/18 → **17/19**(本 fork 序列 +1 语义,上游 14/17 → 15/18) |
+| 宿主回归测试 `app/src/test/cpp/` | ✅ 原样 | monochrome / periodic_texture 两文件;未接 Gradle/CI,仅头文件注释中的手动 `c++` 命令(上游同) |
+
+**dc94dce90 — 1.3.12 阅读器稳定性修复**
+
+| 上游改动 | 状态 | 说明 |
+|---|---|---|
+| `openmp_runtime.h`(新) | ✅ 原样 | JNI_OnLoad 设 `KMP_TOPOLOGY_METHOD=flat`,规避 Android 运行时在 libomp 计核与拓扑发现之间下线 CPU 导致的断言(Real-CUGAN 初始化路径) |
+| `ImageEnhancementCache` 验证快照 API | ✅ 逐字一致 | `readCachedImage`(锁内字节快照 + 1/32 采样预解码拒绝损坏/空条目)、`decodeCachedImage`、compare-and-delete `discardCachedImage`、锁内 `removeCachedImage`(拒绝以失败/零字节编码覆盖页面唯一有效缓存) |
+| `TachiyomiImageDecoder` 解码回落 | ✅ 一致 | `source.peek()` 预检原生解码器,失败仍可回落 BitmapFactory;缓存增强图一律经 `decodeCachedImage` 验证快照解码 |
+| `ReaderPageImageView` 陈旧缓存拒收与恢复 | ✅ 一致 | `imageRevision` / `currentCachedFile` 追踪;处理源文件名编码的增强配置已过期则忽略;增强加载失败经 `originalImageSourceFactory` 回落原始页并每绑定重试一次增强 |
+| `PagerPageHolder` 全路径验证 | ✏️ 适配(既定约定) | 初载、两个 factory、合并双页半图全部经 `readCachedImage` 验证并回落原始显示流;`buildOriginalDisplaySource` 复用非变更显示变换(`processEnhanced`/`mergeEnhancedPages`),恢复不再重插拆页。上游的 `shouldUseSplitDisplaySource` 系列辅助在本 fork 拆页设计(§2.1)下不存在 |
+
+**8318dea84 — QNN 资产剥离构建(本 fork 自有,无上游对应)**
+
+`-Pexclude-qnn-assets` → `strip-qnn.gradle.kts` 经 `finalizedBy` 挂到每个 `package<Variant>` 任务:重写非 arm64 split APK 剔除 `assets/qnn-contexts/*`、zipalign 对齐、debug keystore 重签;CI release job 用 `SIGNING_KEY`(release keystore)再签;universal 与 arm64-v8a 保留模型;不带该属性的构建不变。x86 split 体积 ~412MB → ~115MB。
+
+### 6.2 移植取舍
+
+每条记录:决定 / 放弃的替代方案 / 代价。
+
+1. **原生层与上游字节级一致**:7 个 cpp 文件 + 2 个宿主测试逐字拷贝,komikku 侧可做的精简/改写一律不做。代价:komikku 无法在不破坏"字节级一致"属性的前提下裁剪未用路径;收益:后续 1.3.x 同步保持零噪声 diff,对账成本恒定。
+2. **monochrome 穷举中性检测替代采样归一化**:选 64×64 快速拒绝 + NEON/可移植块路径 + 0.05% 弱色度噪声预算的穷举检测;放弃 1.3.11 之前的输入 RGB→灰采样归一化(会毁掉有色调扫描与小块彩色区域的源像素)。代价:每块多一次分析遍;接受中性页 ≤0.05% 的色度泄漏(伪色仍由共享输出通道抑制)。
+3. **增强开启时按源分辨率解码**:选全分辨率解码进推理;放弃按阅读器显示尺寸预采样(省内存但推理前丢细节)。代价:解码峰值内存更高、推理输入更大;仅在增强开启时生效。
+4. **缓存版本 16/18 → 17/19 + `_dv`/`_tv`/`_nv` 升版**:选升版而非兼容读取;放弃保留旧条目。代价:存量用户增强缓存整体失效一次(下次阅读重新推理);收益:旧守卫/旧解码路径产生的条目永不显示。`_tv3` 收窄到 `model == 1 || (model == 0 && noise == 3)` 而非全局后缀升版,是为了把失效范围限制在受影响模型。
+5. **增强加载失败 → 回落原始页 + 每绑定重试一次增强**:选有界单次重试(`enhancedRecoveryCount`);放弃两种极端 — 不重试(损坏条目 = 该页永久降级,直到手动清缓存)与无限重试(失败循环)。代价:损坏条目在首次访问多花一次增强推理,随后被 compare-and-delete 丢弃。
+6. **所有增强文件访问经 `readCachedImage` 验证**:选每次访问都做 1/32 采样预解码;放弃"只在首载验证"。代价:每次访问少量 CPU/分配;收益:损坏条目在完整解码与 SSIV 显示之前被拒绝。
+7. **陈旧配置条目忽略而非立即删除**:文件名编码增强配置,过期条目在访问时忽略;磁盘回收交给既有 3GB→90% trim。放弃"发现即删"。代价:短暂多占磁盘;收益:不在显示路径(该文件可能正被当前页流式使用)上做删除,避免竞态。
+8. **QNN 剥离选包后重写而非构建期分流**:AGP 未提供按 split 剔除 assets 的构建期配置,故 `finalizedBy` 挂包后任务重写 split。代价:每变体多一次重写 + zipalign + 重签的构建时间;本地产物为 debug keystore 签名(安装信任链由 CI release job 用 release keystore 重签终结);变体列表硬编码与 `apkDir` 锚定 `projectDirectory` 的漂移风险已在脚本注释内自我声明。
+
+### 6.3 有意不移植(上游 1.3.11/1.3.12 其余部分)
+
+1. **host 侧 source-api/LocalSource 改动**(3e5aee233)— 上游该半区是 TachiyomiX 1.6 合并更新 API 的桥接重做(`Source.getMangaUpdate` 经 `LegacyMangaUpdateContext` 协程上下文分发、`CatalogueSource` 桥委托 super、`HttpSource` 收敛 Rx 兜底、`LocalSource` 直接覆写 suspend API + 两个源测试),与 upscale 正交。取舍:本同步只声明读器/增强范围,不动 `source-api` ABI(AGENTS.md:避免破坏扩展 ABI);代价:1.6 扩展的桥接修复要等专门的同步轮次。
+2. **androidTest**:`ImageEnhancementCacheTest.kt`、`NativeModelStartupTest.kt`(3e5aee233)— 设备 instrumentation 测试;本 fork 无模拟器/设备 CI,无法执行。缓存验证逻辑的回归保障由 `app/src/test/cpp` 宿主测试与 Kotlin 层对账覆盖。
+3. **扩展兼容性文件**(053c33caf):`SearchSource`、`ExceptionFormatter`、proguard、gradle 升级 — 与 upscale 无关。
+4. **`ReaderPreferences` model-20 HFA2Real 退役机制**(053c33caf)— fork 无 `REMOVED_ENHANCEMENT_MODELS`/`FIRST_CUSTOM_MODEL_ID` 机制,从未存在过模型 20。
+5. **`app/build.gradle.kts` QNN staging 回退**(053c33caf)— fork 静态入库 `assets/qnn-contexts/`,无 staging 块(§1.1)。
+6. **`tools/qnn/export_models.py` checkpoint 解包**(053c33caf)— fork 无 `tools/qnn`(§5.3)。
+
+### 6.4 已审/排除的疑点(备查,避免重复误报)
+
+- **`discardCachedImage` 的 `current != expectedSource` 不是恒等比较**:okio-jvm 3.17.0 的 `Buffer.equals` 为逐段内容比较(反汇编确认:引用相等 → instanceof → size → 逐段内容),且 `Buffer.close()` 是空操作(bytecode 仅 `return`)— compare-and-delete 语义正确,与上游一致。
+- **`app/build.gradle.kts` 死导入**:剥离提交曾引入 9 个未使用导入(使用它们的逻辑在 `strip-qnn.gradle.kts` 内自行导入);ktlint 不检查 `.kts` 未用导入(`spotlessCheck` 不报错),已在 8318dea84 手工清理。
+
+### 6.5 机械检查
+
+- ✅ `:app:spotlessCheck` 通过;i18n 模块零触碰,KMK/SY 岛完整
+- ✅ `assembleDebug` 通过
+- ✅ 18 个文件全部映射到提交信息声明,无范围蔓延

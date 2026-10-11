@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.util.waifu2x
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.os.Build
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -12,6 +13,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
+import okio.Buffer
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.ConcurrentHashMap
@@ -29,8 +31,10 @@ object ImageEnhancementCache {
     private const val REAL_CUGAN_NPU_INT8_CACHE_REVISION = 1
 
     // KMK -->
-    private const val REAL_CUGAN_TEXTURE_OCCUPANCY_REVISION = 1
-    private const val MONOCHROME_INPUT_NORMALIZATION_REVISION = 2
+    // Input decoding now preserves source resolution before enhancement.
+    private const val ENHANCEMENT_INPUT_DECODE_REVISION = 1
+    private const val REAL_CUGAN_TEXTURE_OCCUPANCY_REVISION = 3
+    private const val MONOCHROME_INPUT_NORMALIZATION_REVISION = 3
     // KMK <--
     private const val MAX_CACHE_SIZE = 3L * 1024 * 1024 * 1024 // 3GB
     private var cacheDir: File? = null
@@ -182,8 +186,78 @@ object ImageEnhancementCache {
      */
     fun getCachedImage(mangaId: Long, chapterId: Long, pageIndex: Int, configHash: String, pageVariant: String = ""): File? {
         val file = File(getChapterDir(mangaId, chapterId), getFilename(pageIndex, configHash, pageVariant))
-        return if (file.exists()) file else null
+        return if (file.isFile) file else null
     }
+
+    // KMK -->
+    /**
+     * Read a stable snapshot before clear()/model changes can delete the backing file.
+     * A small decode rejects corrupt old entries without allocating a full enhanced bitmap.
+     */
+    fun readCachedImage(file: File): Buffer? {
+        val source = cacheLock.read {
+            try {
+                if (!file.isFile) return@read null
+                file.inputStream().use { Buffer().readFrom(it) }
+            } catch (_: Exception) {
+                null
+            }
+        } ?: return null
+
+        val valid = try {
+            val options = BitmapFactory.Options().apply {
+                inSampleSize = 32
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
+            val preview = BitmapFactory.decodeStream(source.peek().inputStream(), null, options)
+            try {
+                preview != null && isDisplayable(preview)
+            } finally {
+                preview?.recycle()
+            }
+        } catch (_: Exception) {
+            false
+        }
+        if (valid) return source
+
+        source.close()
+        discardCachedImage(file, source)
+        return null
+    }
+
+    fun decodeCachedImage(file: File): Bitmap? {
+        val source = readCachedImage(file) ?: return null
+        val snapshot = source.clone()
+        val bitmap = try {
+            source.use { BitmapFactory.decodeStream(it.inputStream()) }
+        } catch (_: Exception) {
+            null
+        }
+        if (bitmap != null && isDisplayable(bitmap)) return bitmap
+        bitmap?.recycle()
+        discardCachedImage(file, snapshot)
+        return null
+    }
+
+    fun discardCachedImage(file: File, expectedSource: Buffer? = null) {
+        val removed = cacheLock.write {
+            if (!file.isFile) return@write false
+            if (expectedSource != null) {
+                val current = try {
+                    file.inputStream().use { Buffer().readFrom(it) }
+                } catch (_: Exception) {
+                    return@write false
+                }
+                if (current != expectedSource) return@write false
+            }
+            file.delete()
+        }
+        if (removed) {
+            _events.tryEmit(CacheEvent.Cleared)
+            android.util.Log.w("ImageEnhancementCache", "Discarded invalid enhanced image: ${file.name}")
+        }
+    }
+    // KMK <--
 
     /**
      * Check if a file is already cached (helper for UI checks)
@@ -196,20 +270,24 @@ object ImageEnhancementCache {
      * Remove a cached enhanced image and its temporary file for the same page/config.
      */
     fun removeCachedImage(mangaId: Long, chapterId: Long, pageIndex: Int, configHash: String, pageVariant: String = ""): Boolean {
-        return try {
-            val file = File(getChapterDir(mangaId, chapterId), getFilename(pageIndex, configHash, pageVariant))
-            val tempFile = File(file.parent, "${file.name}.tmp")
-            val removedFile = !file.exists() || file.delete()
-            val removedTemp = !tempFile.exists() || tempFile.delete()
-            (removedFile && removedTemp).also { removed ->
-                if (removed) {
-                    _events.tryEmit(CacheEvent.Removed(cacheKey(mangaId, chapterId, pageIndex, configHash, pageVariant)))
+        // KMK -->
+        return cacheLock.write {
+            try {
+                val file = File(getChapterDir(mangaId, chapterId), getFilename(pageIndex, configHash, pageVariant))
+                val tempFile = File(file.parent, "${file.name}.tmp")
+                val removedFile = !file.exists() || file.delete()
+                val removedTemp = !tempFile.exists() || tempFile.delete()
+                (removedFile && removedTemp).also { removed ->
+                    if (removed) {
+                        _events.tryEmit(CacheEvent.Removed(cacheKey(mangaId, chapterId, pageIndex, configHash, pageVariant)))
+                    }
                 }
+            } catch (e: Exception) {
+                android.util.Log.e("ImageEnhancementCache", "Failed to remove cached image for page $pageIndex", e)
+                false
             }
-        } catch (e: Exception) {
-            android.util.Log.e("ImageEnhancementCache", "Failed to remove cached image for page $pageIndex", e)
-            false
         }
+        // KMK <--
     }
 
     fun removeSkipMarker(mangaId: Long, chapterId: Long, pageIndex: Int, configHash: String, pageVariant: String = ""): Boolean {
@@ -304,20 +382,25 @@ object ImageEnhancementCache {
                 )
                 val tempFile = File(file.parent, "${file.name}.tmp")
 
-                FileOutputStream(tempFile).use { out ->
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val compressed = FileOutputStream(tempFile).use { out ->
+                    val success = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                         bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, 90, out)
                     } else {
                         @Suppress("DEPRECATION")
                         bitmap.compress(Bitmap.CompressFormat.WEBP, 90, out)
                     }
                     out.flush()
+                    success
                 }
 
-                if (request.generation != cacheGeneration.get()) {
+                // KMK -->
+                // A zero-byte or failed encode must never be renamed over the page's
+                // only valid cache entry.
+                if (!compressed || tempFile.length() == 0L || request.generation != cacheGeneration.get()) {
                     tempFile.delete()
                     return@read null
                 }
+                // KMK <--
 
                 if (tempFile.renameTo(file)) {
                     file
@@ -490,15 +573,18 @@ object ImageEnhancementCache {
             }
 
             // KMK -->
-            // Real-CUGAN denoise3 pages may be re-rendered by the periodic texture
-            // guard, and monochrome inputs are normalized before inference; both
-            // change the output for the same input file.
-            if ((model == 0 || model == 1) && noise == 3) {
+            // The 75% shrink-and-restore texture guard covers every Real-CUGAN
+            // Pro page and SE denoise3 pages, and monochrome pages keep their
+            // source pixels now; all three change the output for the same file.
+            if (model == 1 || (model == 0 && noise == 3)) {
                 append("_tv$REAL_CUGAN_TEXTURE_OCCUPANCY_REVISION")
             }
             // KMK <--
         }
-        return "${noise}x${effectiveScale}_m${model}_rs${realEsrganStyle}_w${maxWidth}_h${maxHeight}_sw${skipMaxWidth}_sh${skipMaxHeight}_t${tileSize}_p${resolvedPrecision}_fa${if (fp16Arithmetic) 1 else 0}_b${resolvedBackend}${modelRevision}_nv$MONOCHROME_INPUT_NORMALIZATION_REVISION"
+        // KMK -->
+        return "${noise}x${effectiveScale}_m${model}_rs${realEsrganStyle}_w${maxWidth}_h${maxHeight}_sw${skipMaxWidth}_sh${skipMaxHeight}_t${tileSize}_p${resolvedPrecision}_fa${if (fp16Arithmetic) 1 else 0}_b${resolvedBackend}${modelRevision}_dv$ENHANCEMENT_INPUT_DECODE_REVISION" +
+            "_nv$MONOCHROME_INPUT_NORMALIZATION_REVISION"
+        // KMK <--
     }
 
     fun getEffectiveScale(model: Int, scale: Int, realEsrganStyle: Int = Waifu2x.REAL_ESRGAN_STYLE_ANIME): Int {

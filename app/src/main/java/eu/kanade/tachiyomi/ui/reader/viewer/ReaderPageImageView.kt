@@ -155,7 +155,22 @@ open class ReaderPageImageView @JvmOverloads constructor(
     private var lastStatusText: String? = null
 
     // KMK -->
+    // Incremented on every new image binding (and on recycle/detach); async enhanced-cache
+    // swaps compare their captured revision before touching the view.
+    private var imageRevision = 0
+    private var currentCachedFile: java.io.File? = null
+    private var originalStreamFn: (() -> java.io.InputStream)? = null
+    private var enhancedRecoveryCount = 0
+    // KMK <--
+
+    // KMK -->
     var enhancedImageSourceFactory: ((java.io.File) -> BufferedSource?)? = null
+
+    /**
+     * Builds the original (non-enhanced) display source, used when an enhanced cache entry
+     * fails to load so the readable original page is never hidden behind an error.
+     */
+    var originalImageSourceFactory: (() -> BufferedSource?)? = null
 
     /**
      * Secondary page of an SY merged double-page spread. When set, both halves are enhanced and
@@ -300,20 +315,6 @@ open class ReaderPageImageView @JvmOverloads constructor(
     }
     // KMK <--
 
-    private fun decodeEnhancedBitmap(file: java.io.File): Bitmap? {
-        return try {
-            val bitmap = android.graphics.BitmapFactory.decodeFile(file.absolutePath) ?: return null
-            if (ImageEnhancementCache.isDisplayable(bitmap)) {
-                bitmap
-            } else {
-                logcat(LogPriority.WARN) { "Ignoring invalid enhanced cache: ${file.absolutePath}" }
-                bitmap.recycle()
-                null
-            }
-        } catch (_: Exception) {
-            null
-        }
-    }
     // KMK <--
 
     @CallSuper
@@ -339,6 +340,10 @@ open class ReaderPageImageView @JvmOverloads constructor(
 
     @CallSuper
     open fun onImageLoadError(error: Throwable?) {
+        // KMK -->
+        // A failed enhanced-cache load must not hide a readable original page.
+        if (recoverEnhancedCacheLoad(error)) return
+        // KMK <--
         onImageLoadError?.invoke(error)
 
         // KMK -->
@@ -353,6 +358,50 @@ open class ReaderPageImageView @JvmOverloads constructor(
         }
         // KMK <--
     }
+
+    // KMK -->
+    /** Cache failures must not hide a readable original page. Retry enhancement once per binding. */
+    protected fun recoverEnhancedCacheLoad(error: Throwable?): Boolean {
+        val file = currentCachedFile ?: return false
+        val displayConfig = config ?: return false
+        val originalFactory = originalImageSourceFactory ?: run {
+            val stream = enhancementStreamOverride ?: originalStreamFn ?: readerPage?.stream ?: return false
+            { stream().use { Buffer().readFrom(it) } }
+        }
+        val revision = imageRevision
+        val retryEnhancement = enhancedRecoveryCount++ == 0
+        currentCachedFile = null
+        currentLoadedUri = null
+        processingJob?.cancel()
+        clearProcessedSwapView()
+        pageView?.alpha = 1f
+        enhancedOverlay.setImageBitmap(null)
+        enhancedOverlay.isVisible = false
+        enhancedBitmap?.recycle()
+        enhancedBitmap = null
+        isSettingProcessedImage = false
+        logcat(LogPriority.WARN, error) { "ReaderPageImageView: Restoring original after enhanced cache load failed" }
+        viewScope.launchIO {
+            ImageEnhancementCache.discardCachedImage(file)
+            val original = try {
+                originalFactory() ?: throw IllegalStateException("Original image is unavailable")
+            } catch (e: Exception) {
+                withUIContext { if (revision == imageRevision) onImageLoadError(e) }
+                return@launchIO
+            }
+            withUIContext {
+                if (revision != imageRevision) {
+                    original.close()
+                    return@withUIContext
+                }
+                prepareNonAnimatedImageView()
+                setNonAnimatedImage(original, displayConfig, originalStreamFn, allowEnhancement = retryEnhancement)
+                if (!retryEnhancement) updateStatus(context.stringResource(KMR.strings.reader_status_raw))
+            }
+        }
+        return true
+    }
+    // KMK <--
 
     @CallSuper
     open fun onScaleChanged(newScale: Float) {
@@ -593,11 +642,16 @@ open class ReaderPageImageView @JvmOverloads constructor(
                     val uriString = cachedFile.toURI().toString()
                     if (currentLoadedUri != uriString) {
                         // Load the enhanced image if not already loaded or if source changed
+                        val revision = imageRevision
                         viewScope.launchIO {
                             val transformedSource = buildEnhancedDisplaySource(cachedFile, secondaryFile)
                             if (transformedSource != null) {
                                 withUIContext {
-                                    setProcessedSource(cachedFile, transformedSource = transformedSource)
+                                    if (revision == imageRevision) {
+                                        setProcessedSource(cachedFile, transformedSource = transformedSource)
+                                    } else {
+                                        transformedSource.close()
+                                    }
                                 }
                                 return@launchIO
                             }
@@ -608,11 +662,15 @@ open class ReaderPageImageView @JvmOverloads constructor(
                                 return@launchIO
                             }
 
-                            val bitmap = decodeEnhancedBitmap(cachedFile)
+                            val source = ImageEnhancementCache.readCachedImage(cachedFile)
 
-                            if (bitmap != null) {
+                            if (source != null) {
                                 withUIContext {
-                                    setProcessedSource(cachedFile, bitmap = bitmap)
+                                    if (revision == imageRevision) {
+                                        setProcessedSource(cachedFile, transformedSource = source)
+                                    } else {
+                                        source.close()
+                                    }
                                 }
                             } else {
                                 healInvalidEnhancedCache(mId, cId, pIdx, configHash, readerPage, forceCurrentPage = true)
@@ -697,6 +755,13 @@ open class ReaderPageImageView @JvmOverloads constructor(
     }
 
     fun setImage(drawable: Drawable, config: Config) {
+        // KMK -->
+        imageRevision++
+        processingJob?.cancel()
+        currentCachedFile = null
+        enhancedRecoveryCount = 0
+        originalStreamFn = null
+        // KMK <--
         this.config = config
         if (drawable is Animatable) {
             prepareAnimatedImageView()
@@ -708,6 +773,13 @@ open class ReaderPageImageView @JvmOverloads constructor(
     }
 
     fun setImage(source: BufferedSource, isAnimated: Boolean, config: Config, streamFn: (() -> java.io.InputStream)? = null) {
+        // KMK -->
+        imageRevision++
+        processingJob?.cancel()
+        currentCachedFile = null
+        enhancedRecoveryCount = 0
+        originalStreamFn = streamFn
+        // KMK <--
         this.config = config
         if (isAnimated) {
             prepareAnimatedImageView()
@@ -720,6 +792,9 @@ open class ReaderPageImageView @JvmOverloads constructor(
 
     // KMK -->
     fun recycle() {
+        imageRevision++
+        currentCachedFile = null
+        originalStreamFn = null
         clearProcessedSwapView()
         pageView?.let {
             processingJob?.cancel()
@@ -826,74 +901,53 @@ open class ReaderPageImageView @JvmOverloads constructor(
     // KMK -->
     protected fun setProcessedSource(
         file: java.io.File,
-        bitmap: Bitmap? = null,
-        transformedSource: BufferedSource? = null,
+        transformedSource: BufferedSource,
     ) {
-        val uriString = file.toURI().toString()
-        updateStatus(context.stringResource(KMR.strings.reader_status_processed) + enhancementBackendSuffix())
-
-        if (transformedSource != null) {
-            val activeView = pageView as? SubsamplingScaleImageView
-            if (activeView != null) {
-                animateProcessedSwap(activeView, config) {
-                    setImageWithCurrentCrop(ImageSource.inputStream(transformedSource.inputStream()))
-                }
-            } else {
-                val previewBitmap = try {
-                    android.graphics.BitmapFactory.decodeStream(transformedSource.peek().inputStream())
-                } catch (_: Exception) {
-                    null
-                }
-
-                if (previewBitmap != null) {
-                    enhancedOverlay.scaleType = ImageView.ScaleType.FIT_CENTER
-                    enhancedOverlay.bringToFront()
-                    enhancedOverlay.setImageBitmap(previewBitmap)
-                    enhancedOverlay.alpha = 1f
-                    enhancedOverlay.isVisible = true
-                    statusView.bringToFront()
-                    enhancedBitmap = previewBitmap
-                    isSettingProcessedImage = true
-                    pageView?.alpha = 0f
-                } else {
-                    pageView?.alpha = 1f
-                    enhancedOverlay.animate().cancel()
-                    enhancedOverlay.setImageBitmap(null)
-                    enhancedOverlay.isVisible = false
-                    enhancedBitmap?.recycle()
-                    enhancedBitmap = null
-                    isSettingProcessedImage = false
-                }
-            }
-            currentLoadedUri = uriString
-            isVisible = true
+        // Ignore results produced by an older enhancement configuration: a model
+        // switch clears the cache asynchronously and a slow poller can still hold
+        // a file that was deleted (or already replaced) for the previous config.
+        val cachedConfig = file.name.substringAfter('_').removeSuffix(".webp")
+        val currentConfig = enhancementConfigHash()
+        if (!realCuganEnabled || (cachedConfig != currentConfig && !cachedConfig.startsWith("${currentConfig}_"))) {
+            transformedSource.close()
             return
         }
+        val uriString = file.toURI().toString()
+        currentCachedFile = file
+        updateStatus(context.stringResource(KMR.strings.reader_status_processed) + enhancementBackendSuffix())
 
-        if (bitmap != null) {
-            val activeView = pageView as? SubsamplingScaleImageView
-            if (activeView != null) {
-                animateProcessedSwap(activeView, config) {
-                    val uri = android.net.Uri.fromFile(file)
-                    setImageWithCurrentCrop(ImageSource.uri(context, uri))
-                }
-                currentLoadedUri = uriString
-                isVisible = true
-                return
+        val activeView = pageView as? SubsamplingScaleImageView
+        if (activeView != null) {
+            animateProcessedSwap(activeView, config) {
+                setImageWithCurrentCrop(ImageSource.inputStream(transformedSource.inputStream()))
             }
-            enhancedOverlay.scaleType = ImageView.ScaleType.FIT_CENTER
-            enhancedOverlay.bringToFront()
-            enhancedOverlay.setImageBitmap(bitmap)
-            enhancedOverlay.alpha = 1f
-            enhancedOverlay.isVisible = true
-            statusView.bringToFront()
-            enhancedBitmap = bitmap
-            isSettingProcessedImage = true
-            pageView?.alpha = 0f
-        }
+        } else {
+            val previewBitmap = try {
+                android.graphics.BitmapFactory.decodeStream(transformedSource.peek().inputStream())
+            } catch (_: Exception) {
+                null
+            }
 
-        val uri = android.net.Uri.fromFile(file)
-        (pageView as? SubsamplingScaleImageView)?.setImageWithCurrentCrop(ImageSource.uri(context, uri))
+            if (previewBitmap != null) {
+                enhancedOverlay.scaleType = ImageView.ScaleType.FIT_CENTER
+                enhancedOverlay.bringToFront()
+                enhancedOverlay.setImageBitmap(previewBitmap)
+                enhancedOverlay.alpha = 1f
+                enhancedOverlay.isVisible = true
+                statusView.bringToFront()
+                enhancedBitmap = previewBitmap
+                isSettingProcessedImage = true
+                pageView?.alpha = 0f
+            } else {
+                pageView?.alpha = 1f
+                enhancedOverlay.animate().cancel()
+                enhancedOverlay.setImageBitmap(null)
+                enhancedOverlay.isVisible = false
+                enhancedBitmap?.recycle()
+                enhancedBitmap = null
+                isSettingProcessedImage = false
+            }
+        }
         currentLoadedUri = uriString
         isVisible = true
     }
@@ -1186,6 +1240,7 @@ open class ReaderPageImageView @JvmOverloads constructor(
         data: Any,
         config: Config,
         streamFn: (() -> java.io.InputStream)? = null,
+        allowEnhancement: Boolean = true,
     ) = (pageView as? SubsamplingScaleImageView)?.apply {
         setDoubleTapZoomDuration(config.zoomDuration.getSystemScaledDuration())
         setMinimumScaleType(config.minimumScaleType)
@@ -1220,7 +1275,7 @@ open class ReaderPageImageView @JvmOverloads constructor(
                     isVisible = true
                     // KMK -->
                     // Enhancement Logic for Stream Sources
-                    if (realCuganEnabled && pageIndex >= 0 && mangaId != -1L) {
+                    if (allowEnhancement && realCuganEnabled && pageIndex >= 0 && mangaId != -1L) {
                         processImageHelper(streamFn = streamFn)
                     }
                     // KMK <--
@@ -1253,7 +1308,7 @@ open class ReaderPageImageView @JvmOverloads constructor(
 
                 // KMK -->
                 // Enhancement Logic for Stream Sources (webtoon long-strip decode path)
-                if (realCuganEnabled && pageIndex >= 0 && mangaId != -1L) {
+                if (allowEnhancement && realCuganEnabled && pageIndex >= 0 && mangaId != -1L) {
                     processImageHelper(streamFn = streamFn)
                 }
                 // KMK <--
@@ -1305,10 +1360,10 @@ open class ReaderPageImageView @JvmOverloads constructor(
                         setProcessedSource(cachedFile, transformedSource = transformedSource)
                         return
                     }
-                    val bitmap = decodeEnhancedBitmap(cachedFile)
-                    if (bitmap != null) {
-                        val uri = android.net.Uri.fromFile(cachedFile)
-                        setImageWithCurrentCrop(ImageSource.uri(context, uri))
+                    val source = ImageEnhancementCache.readCachedImage(cachedFile)
+                    if (source != null) {
+                        currentCachedFile = cachedFile
+                        setImageWithCurrentCrop(ImageSource.inputStream(source.inputStream()))
                         currentLoadedUri = cachedFile.toURI().toString()
                         isVisible = true
                         updateStatus(context.stringResource(KMR.strings.reader_status_processed) + enhancementBackendSuffix())
@@ -1433,11 +1488,11 @@ open class ReaderPageImageView @JvmOverloads constructor(
                                 return@launchIO
                             }
 
-                            val bitmap = decodeEnhancedBitmap(file)
+                            val source = ImageEnhancementCache.readCachedImage(file)
 
-                            if (bitmap != null) {
+                            if (source != null) {
                                 withUIContext {
-                                    setProcessedSource(file, bitmap = bitmap)
+                                    setProcessedSource(file, transformedSource = source)
                                 }
                                 return@launchIO
                             } else {
@@ -1507,6 +1562,8 @@ open class ReaderPageImageView @JvmOverloads constructor(
     // KMK -->
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
+        imageRevision++
+        currentCachedFile = null
         processingJob?.cancel()
         processingJob = null
 

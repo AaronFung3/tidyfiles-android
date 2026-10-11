@@ -60,6 +60,16 @@ class TachiyomiImageDecoder(private val resources: ImageSource, private val opti
                 var enhancedResult: Bitmap? = null
                 // KMK <--
 
+                // KMK --> Enhancement must see the source resolution. Sampling to the reader's
+                // display size first permanently discards detail before the model runs.
+                val decodeAtSourceResolution = options.enhanced &&
+                    options.mangaId != -1L &&
+                    options.chapterId != -1L &&
+                    options.pageIndex != -1 &&
+                    runCatching { Injekt.get<ReaderPreferences>().realCuganEnabled().get() }
+                        .getOrDefault(false)
+                // KMK <--
+
                 // 1. Attempt decoding with native ImageDecoder (for AVIF/JXL/HEIF)
                 bitmap = run {
                     // SY -->
@@ -75,7 +85,9 @@ class TachiyomiImageDecoder(private val resources: ImageSource, private val opti
                     val nativeDecoder = try {
                         ImageDecoder.newInstance(
                             // SY -->
-                            coverStream ?: source.inputStream(),
+                            // KMK --> Keep the original unread so a failed native decode can use BitmapFactory.
+                            coverStream ?: source.peek().inputStream(),
+                            // KMK <--
                             // SY <--
                             options.cropBorders,
                             displayProfile,
@@ -94,13 +106,17 @@ class TachiyomiImageDecoder(private val resources: ImageSource, private val opti
                         val dstWidth = options.size.widthPx(options.scale) { srcWidth }
                         val dstHeight = options.size.heightPx(options.scale) { srcHeight }
 
-                        sampleSize = DecodeUtils.calculateInSampleSize(
-                            srcWidth = srcWidth,
-                            srcHeight = srcHeight,
-                            dstWidth = dstWidth,
-                            dstHeight = dstHeight,
-                            scale = options.scale,
-                        )
+                        sampleSize = if (decodeAtSourceResolution) {
+                            1
+                        } else {
+                            DecodeUtils.calculateInSampleSize(
+                                srcWidth = srcWidth,
+                                srcHeight = srcHeight,
+                                dstWidth = dstWidth,
+                                dstHeight = dstHeight,
+                                scale = options.scale,
+                            )
+                        }
                         nativeDecoder.decode(sampleSize = sampleSize)
                     } finally {
                         nativeDecoder.recycle()
@@ -120,13 +136,17 @@ class TachiyomiImageDecoder(private val resources: ImageSource, private val opti
                             val dstWidth = options.size.widthPx(options.scale) { srcWidth }
                             val dstHeight = options.size.heightPx(options.scale) { srcHeight }
 
-                            sampleSize = DecodeUtils.calculateInSampleSize(
-                                srcWidth = srcWidth,
-                                srcHeight = srcHeight,
-                                dstWidth = dstWidth,
-                                dstHeight = dstHeight,
-                                scale = options.scale,
-                            )
+                            sampleSize = if (decodeAtSourceResolution) {
+                                1
+                            } else {
+                                DecodeUtils.calculateInSampleSize(
+                                    srcWidth = srcWidth,
+                                    srcHeight = srcHeight,
+                                    dstWidth = dstWidth,
+                                    dstHeight = dstHeight,
+                                    scale = options.scale,
+                                )
+                            }
 
                             val decodeOps = BitmapFactory.Options().apply {
                                 inSampleSize = sampleSize
@@ -147,6 +167,13 @@ class TachiyomiImageDecoder(private val resources: ImageSource, private val opti
                     logcat(LogPriority.ERROR) { "TachiyomiImageDecoder: Failed to decode bitmap via all methods" }
                     return@use null
                 }
+
+                // KMK -->
+                logcat(LogPriority.DEBUG) {
+                    "TachiyomiImageDecoder: decoded ${bitmap.width}x${bitmap.height}, " +
+                        "sampleSize=$sampleSize, sourceResolution=$decodeAtSourceResolution"
+                }
+                // KMK <--
 
                 // KMK --> --- Enhancement Integration ---
                 if (options.enhanced) {
@@ -180,7 +207,7 @@ class TachiyomiImageDecoder(private val resources: ImageSource, private val opti
                             val cachedFile = ImageEnhancementCache.getCachedImage(mangaId, chapterId, pageIndex, configHash, pageVariant)
                             if (cachedFile != null) {
                                 try {
-                                    val cachedBitmap = BitmapFactory.decodeFile(cachedFile.absolutePath)
+                                    val cachedBitmap = ImageEnhancementCache.decodeCachedImage(cachedFile)
                                     if (cachedBitmap != null && ImageEnhancementCache.isDisplayable(cachedBitmap)) {
                                         bitmap.recycle()
                                         bitmap = cachedBitmap
@@ -448,7 +475,7 @@ class TachiyomiImageDecoder(private val resources: ImageSource, private val opti
             options.pageVariant,
         ) ?: return null
 
-        val cachedBitmap = BitmapFactory.decodeFile(cachedFile.absolutePath)
+        val cachedBitmap = ImageEnhancementCache.decodeCachedImage(cachedFile)
         if (cachedBitmap != null && ImageEnhancementCache.isDisplayable(cachedBitmap)) {
             logcat(LogPriority.DEBUG) {
                 "TachiyomiImageDecoder: Page $pageIndex/${options.pageVariant} served from enhanced cache before source decode"

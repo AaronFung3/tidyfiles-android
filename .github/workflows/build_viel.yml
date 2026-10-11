@@ -132,7 +132,9 @@ jobs:
 
       - name: Build viel app
         # `enable-updater` is required, otherwise the in-app update check is compiled out.
-        run: ./gradlew assembleViel -Penable-updater
+        # `exclude-qnn-assets` strips the ~437 MB of QNN models from the non-arm64 split
+        # APKs after packaging (strip + realign + debug re-sign, see app/build.gradle.kts).
+        run: ./gradlew assembleViel -Penable-updater -Pexclude-qnn-assets
 
       - name: Upload artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
