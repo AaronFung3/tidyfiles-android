@@ -24,6 +24,17 @@ The enhancement port originates from
 Kotlin/JNI code was ported from MIU as well; local modifications are marked
 with `// KMK -->` islands.
 
+**2026-10-17 update (MIU v1.3.14):** MIU rebuilt the NPU contexts with
+corrected calibration (its `tools/qnn/prepare_calibration.py` /
+`convert_int8_models.sh` changed in the same release). 110 of the 150
+`assets/qnn-contexts/*.bin` files were replaced from the v1.3.14
+`app-arm64-v8a-release.apk` — every Real-CUGAN SE / Real-CUGAN Pro denoise3x /
+Real-ESRGAN / SPAN / W2xEX context (FP16 + INT8, v69–v81); the Real-CUGAN Pro
+conservative contexts were not regenerated and are unchanged. The ncnn model
+files (`.param`/`.bin`) are byte-identical to v1.3.12. This resolves the SPAN
+FP16 black-page defect described below; FP16 contexts are now per-arch
+distinct files as expected.
+
 Model files bundled directly by this repository (previously fetched at runtime
 by a download fallback that has been removed) come from the canonical upstream
 sources:
@@ -69,17 +80,13 @@ extracted from MIU's release. Their integrity is covered by the checksums
 below, but the legal review of Qualcomm's redistribution terms has not been
 done. Do not publish builds containing them without that review.
 
-**Known broken artifact:** the SPAN FP16 QNN contexts
-(`qnn-contexts/span-nomosuni-x2.v*.bin`) are byte-identical across all five
-HTP architectures (every other model's FP16 context is per-arch), and the
-shared artifact executes successfully on HTP v79 but produces an all-black
-output (verified on SM8750 against MIU v1.3.12, whose APK ships the exact
-same files — 150/150 contexts byte-identical to this repository). Upstream
-master still stages the same context, so no fixed export exists to pull.
-Until the context is re-exported with the QNN SDK pipeline, SPAN on the NPU
-backend is only usable with INT8 precision (whose contexts are per-arch and
-verified working); FP16 + NPU yields black pages that get cached, so SPAN
-users should pick INT8 or the Vulkan backend.
+**Formerly broken artifact (resolved by MIU v1.3.14):** the SPAN FP16 QNN
+contexts (`qnn-contexts/span-nomosuni-x2.v*.bin`) shipped by MIU up to v1.3.12
+were byte-identical across all five HTP architectures and produced all-black
+output on HTP v79 (verified on SM8750 against MIU v1.3.12, see issue
+HaoweiLi97/mihon_img_upscale#17). MIU v1.3.14 re-exported them as proper
+per-arch contexts (verified: five distinct SHA256 digests); this repository
+ships the rebuilt files as of the 2026-10-17 update above.
 
 ## Verification
 

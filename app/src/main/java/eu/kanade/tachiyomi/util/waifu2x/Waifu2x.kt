@@ -25,8 +25,11 @@ object Waifu2x {
     // KMK -->
     // Port of upstream 1.3.11: refresh enhancement caches for the corrected
     // decoding (source-resolution input) and texture-guard processing.
+    // 1.3.14 rebuilt NPU contexts: bumped to 20 instead of upstream's 19 — our
+    // previous version file already said "19" and refresh is a string compare,
+    // so reusing it would leave stale contexts in place.
     const val BUNDLED_MODEL_CACHE_VERSION = "17"
-    private const val QNN_CONTEXT_CACHE_VERSION = "19"
+    internal const val QNN_CONTEXT_CACHE_VERSION = "20"
     // KMK <--
 
     @Volatile private var isInitialized = false
