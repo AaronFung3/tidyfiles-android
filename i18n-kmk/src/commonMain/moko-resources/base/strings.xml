@@ -272,4 +272,5 @@
     <string name="reader_status_raw">RAW</string>
     <string name="reader_status_processing">PROCESSING</string>
     <string name="reader_status_queued">QUEUED</string>
+    <string name="reader_status_enhancing_progress">%1$d%%</string>
 </resources>
