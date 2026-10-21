@@ -225,7 +225,14 @@ object ImageEnhancer {
         val existingRequest = pendingRequests[requestKey]
         if (existingRequest != null) {
             if (effectiveHighPriority) {
-                if (existingRequest.priority == 1) return
+                // KMK --> the page is already promoted, but the worker may still be busy with
+                // another page; re-asserting the visible request is what preempts it. Without
+                // this call the promotion silently never interrupts an active non-focused page.
+                if (existingRequest.priority == 1) {
+                    preemptForVisibleRequest(pageIndex, pageVariant)
+                    return
+                }
+                // KMK <--
                 // Upgrade priority: Remove existing (likely Low) and re-add as High
                 val removed = queue.remove(existingRequest)
                 if (removed) {

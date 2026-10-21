@@ -48,10 +48,12 @@ class ImageEnhancerPriorityTest {
     @Test
     fun visiblePageOutranksPromotedPreload() {
         ImageEnhancer.reprioritizeAround(5)
-        val promoted = request(page = 5, priority = 1, seq = 0)
+        // Different pages on purpose: two requests for the same page would sort to
+        // the same index and the assertion would hold no matter which one won.
+        val promoted = request(page = 3, priority = 1, seq = 0)
         val visible = request(page = 5, priority = 0, seq = 1)
 
-        assertEquals(listOf(5, 5), listOf(visible, promoted).sorted().map(ImageEnhancer.EnhanceRequest::pageIndex))
+        assertEquals(listOf(5, 3), listOf(visible, promoted).sorted().map(ImageEnhancer.EnhanceRequest::pageIndex))
     }
 
     @Test

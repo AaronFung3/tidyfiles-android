@@ -192,7 +192,7 @@
 | e6d2b413a | 增强队列串行化与重试竞态:worker 在同一 monitor 下 poll、`requeueOnCancel` 簿记、`processRequest` 代际/身份校验、被取消尝试不得抑制替代请求的重排队 | ✅ 一致 |
 | f366fe980 | 状态标签跨轮询/重绑定稳定:`EnhancementPollKey`(revision+manga/chapter/page/variant/config)去重重启、`statusUpdateVersion` 拒绝陈旧回帖 | ✅ 一致 |
 | f2e7c7305 | **QNN 设备编译路线**:`assets/qnn-models` 15 个 FP16 DLC(33.6MB,取自 v1.3.15 release APK)取代 437MB 预编译 contexts;`QnnModelContexts` 按设备在 `noBackupFilesDir` 编译并持久化(缓存键含 CACHE_VERSION=20/QNN 2.49.0/DLC hash/HTP 架构/Build.FINGERPRINT/ABI,checksum 校验,新 context 就绪后惰性回收同模型旧 key 目录);删除 `strip-qnn.gradle.kts` 与 `-Pexclude-qnn-assets`;INT8 全退役,精度枚举收窄为 FP16/FP32/BF16(legacy 2 → FP16),QNN 缓存键固定 `_nf1`;`waifu2x_jni.cpp`/`spatial_qnn_runtime.cpp`/`qnn_context_bridge.cpp` 字节级恢复 | ✅ 一致(资产来源见 §7.4) |
-| 1f72f570a | **MediaTek NPU 后端**:`MediaTekNpu`(LiteRT 2.3.0 + NeuroPilot dispatch,17 个 tflite 32.8MB 设备编译,`litert-models/manifest.json` 校验和)、Manifest 6 个 `libneuron*` 可选 native-library、设置页后端枚举 + 准备状态(Preparing/Ready/Failed)+ 重试、默认后端 MTK 优先(次选 Qualcomm,回落 Vulkan)、`NpuModelStatus` 共享状态流 | ✅ 一致 |
+| 1f72f570a | **MediaTek NPU 后端**:`MediaTekNpu`(LiteRT 2.3.0 + NeuroPilot dispatch,15 个 tflite 32.8 MiB 设备编译,`litert-models/manifest.json` 校验和)、Manifest 6 个 `libneuron*` 可选 native-library、设置页后端枚举 + 准备状态(Preparing/Ready/Failed)+ 重试、默认后端 MTK 优先(次选 Qualcomm,回落 Vulkan)、`NpuModelStatus` 共享状态流 | ✅ 一致 |
 | 1715ba574 | zh-rCN 4 个字符串(联发科 NPU / NPU 准备状态×3) | ⚠️ 有意偏离 i18n 规则,见 §7.3-1 |
 | 15d9b0a49 | 状态徽标把 MediaTek NPU 处理页标注为 LiteRT(与后端实际运行时一致) | ✅ 一致 |
 
@@ -203,7 +203,7 @@
 审查发现的 5 项及处置:
 
 1. **zh-rCN 非 base locale 直接编辑(1715ba574)— 决定保留**。与 AGENTS.md "非 base locale 由 Weblate 接管"的硬规则冲突(自查项明确禁止);译者决定接受偏离并在此记录,理由是上游措辞直接可复用、避免中文用户在 Weblate 同步前长期看到英文设置文案。已知代价:Weblate 下次同步该 4 键可能冲突,届时以 Weblate 为准。
-2. **[已修] `AndroidManifest.xml` KMK 标记未闭合**:6 个 `libneuron*` 声明的 `<!-- KMK -->` 无闭合。XML 注释内容不允许 `--`,故闭合行写作 `<!-- KMK end -->`(XML 内 KMK 块的既定写法,自本提交起生效)。
+2. **[已修] `AndroidManifest.xml` KMK 标记未闭合**:6 个 `libneuron*` 声明的 `<!-- KMK -->` 无闭合。XML 注释内容不允许 `--`,沿用仓库既有写法 `<!-- KMK -> -->` / `<!-- KMK <- -->`(同 `res/layout/edit_manga_dialog.xml`)。
 3. **[已修] `MediaTekNpu.prepareForCpuValidation` 死代码删除**:上游由 androidTest `MediaTekNpuDeviceTest` 调用,该测试未移植(§7.3-3),钩子在 komikku 无调用者。连同 `prepareInternal` 的 `cpuValidationOnly` 参数与 `litert-cpu-validation` 目录分支一并清理;JNI 侧 `nativeInitialize` 的 `cpuTest`/`prepareOnly` 参数保留(引擎接口字节级一致的前提)。
 4. **[已补] JVM 单测**:见 §7.5。
 5. **[已修] `app/build.gradle.kts` 冗余嵌套 KMK 标记**:litert 依赖本就在外层 KMK 块内,删除多余的 `// KMK -->`/`// KMK <--` 对。
@@ -214,6 +214,8 @@
 2. **QNN 资产路线**:选"FP16 DLC + 设备编译"替代"预编译 contexts 入库 + APK 剥离构建"。收益:仓库 −437MB、非 arm64 split 不再需要包后重写、DLC 与 runtime 版本解耦;代价:首次使用每模型一次秒级设备编译(失败显式化,UI 可重试),旧版本静态 context 用户升级后 `cacheDir/qnn-contexts-v*` 残留(无害,系统可回收)。
 3. **androidTest 维持不移植**(延续 §6.3-2):上游 `ImageEnhancementCacheTest`/`ImageEnhancerQueueTest`/`MediaTekNpuDeviceTest`/`QualcommHtpDeviceTest`/`NativeModelStartupTest` 均为设备 instrumentation,本 fork 无设备 CI。其中可纯 JVM 化的断言改写入 `app/src/test`(§7.5);位图/真机依赖的用例保持上游-only。`prepareForCpuValidation` 因此删除(§7.2-3)。
 4. **默认后端设备自适应**:`realCuganProcessingBackend` 默认值由常量 1(Qualcomm)改为 `Waifu2x.defaultProcessingBackend()`(MTK → MediaTek,Qualcomm HTP 可用 → Qualcomm,否则 Vulkan)。仅影响新装用户;升级用户保留既有存储值。
+5. **增强失败不写 skip marker(与上游一致,已核对)**:模型全部随 APK 分发并在设备上编译,失败是可重试状态而非永久跳过,故 `TachiyomiImageDecoder` 在 NPU 初始化失败或模型无 NPU 资产时只保留原图、不落 `.skip`;`MediaTekNpu`/`QnnModelContexts` 自行记住失败,仅设置页显式重试(或新进程)才重新编译。为免轮询循环反复整页解码,komikku 在 `ReaderPageImageView` 的 poll heal 分支加了每次绑定最多 `MAX_HEAL_ATTEMPTS` 次重入队(上游无此上限)。
+6. **补齐两处上游行为(审查发现,已修)**:①`ImageEnhancer.enhanceLazy` 的"已提升为高优先级"早退分支漏了 `preemptForVisibleRequest`,导致可见页无法抢占正在处理的其他页,已按上游补回;②`ImageEnhancementCache.removeSkipMarker` 在本 fork 无调用者(上游由 `PagerPageHolder.ensureVisibleExtraPageEnhancement` 调用),已改为在 `ReaderPageImageView.onPageSelected` 中对主/副页各解除一次,使因分辨率超限被跳过的页在用户翻回时重试,且只在选中时清除、不在重绑定时清除,避免失败页循环。
 
 ### 7.4 机械检查(审查时复验)
 

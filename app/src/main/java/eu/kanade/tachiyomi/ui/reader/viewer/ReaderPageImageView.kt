@@ -630,10 +630,16 @@ open class ReaderPageImageView @JvmOverloads constructor(
             val pageVariant = enhancementVariant()
             val secondaryFile = secondaryCachedFile(mId, configHash)
 
+            // KMK --> the sibling half is visible too, so a skip marker recorded for it gets the
+            // same one-shot retry as the primary page: clear it on selection only, so a half that
+            // keeps failing cannot loop through the poll heal path.
             if (secondary != null && isSecondarySkipped(mId, configHash)) {
-                // The sibling half is not enhanced, so the merged spread stays raw.
-                updateStatus(context.stringResource(KMR.strings.reader_status_raw))
-            } else if (secondary != null && secondaryFile == null) {
+                secondary.chapter.chapter.id?.let { secondaryChapterId ->
+                    ImageEnhancementCache.removeSkipMarker(mId, secondaryChapterId, secondary.index, configHash, variantOf(secondary))
+                }
+            }
+            // KMK <--
+            if (secondary != null && secondaryFile == null) {
                 // Waiting for the sibling half - keep both queued and let polling swap once ready.
                 updateStatus(context.stringResource(KMR.strings.reader_status_processing))
                 enqueueEnhancement(mId, cId, pIdx, highPriority = true)
@@ -685,7 +691,17 @@ open class ReaderPageImageView @JvmOverloads constructor(
                         updateStatus(enhancementBackendName())
                     }
                 } else if (ImageEnhancementCache.isSkipped(mId, cId, pIdx, configHash, pageVariant)) {
-                    updateStatus(context.stringResource(KMR.strings.reader_status_raw))
+                    // KMK --> the page is now the one the user navigated to, so give it another
+                    // chance instead of leaving it raw for the rest of the session. Mirrors
+                    // upstream's ensureVisibleExtraPageEnhancement; the marker is only cleared
+                    // on selection, never on a plain rebind, so a failing page cannot loop.
+                    logcat(LogPriority.DEBUG) { "ReaderPageImageView: Page $pIdx was skipped, retrying because it is visible" }
+                    ImageEnhancementCache.removeSkipMarker(mId, cId, pIdx, configHash, pageVariant)
+                    updateStatus(context.stringResource(KMR.strings.reader_status_processing))
+                    enqueueEnhancement(mId, cId, pIdx, highPriority = true)
+                    enqueueSecondaryIfNeeded(mId, configHash, highPriority = true)
+                    startEnhancementPolling(mId, cId, pIdx, configHash)
+                    // KMK <--
                 } else {
                     // Not in cache, not skipped - ensure it's being processed with high priority
                     updateStatus(context.stringResource(KMR.strings.reader_status_processing))
@@ -1451,6 +1467,10 @@ open class ReaderPageImageView @JvmOverloads constructor(
                 val pageVariant = enhancementVariant()
                 val secondary = secondaryPage
                 var wasEnhancing = false
+                // KMK --> bounded so a page that cannot be enhanced (for example an NPU model
+                // that failed to compile) is not decoded again on every poll pass.
+                var healAttempts = 0
+                // KMK <--
                 var shouldCheckCache = true
                 val cacheEvents = ImageEnhancementCache.events
                     .filter { it.affects(mId, cId, pIdx, configHash, pageVariant) }
@@ -1524,7 +1544,15 @@ open class ReaderPageImageView @JvmOverloads constructor(
                         // Not in queue, not cached - might need to re-enqueue
                         val current = currentGlobalPageIndex
                         val shouldHeal = pIdx >= current && pIdx <= current + preloadSize
-                        if (shouldHeal && !ImageEnhancementCache.isSkipped(mId, cId, pIdx, configHash, pageVariant)) {
+                        // KMK --> an attempt that produced neither a cache entry nor a skip marker
+                        // failed for good for this binding (for example an NPU model that could not
+                        // be compiled). Re-enqueueing forever would decode this page on every pass,
+                        // so give it a bounded number of attempts; scrolling the page back in or
+                        // changing the settings starts a new binding with a fresh counter.
+                        val canRetry = healAttempts < MAX_HEAL_ATTEMPTS
+                        if (shouldHeal && canRetry && !ImageEnhancementCache.isSkipped(mId, cId, pIdx, configHash, pageVariant)) {
+                            healAttempts++
+                            // KMK <--
                             logcat(LogPriority.WARN) { "ReaderPageImageView: Polling re-enqueue page $pIdx/$pageVariant (cur=$current)" }
                             // Only the focused variant may jump the queue; other variants sharing
                             // the page index must not monopolize the high-priority queue.
@@ -1686,4 +1714,11 @@ private const val MAX_ZOOM_SCALE = 5F
 
 // KMK -->
 private const val PROCESSED_SWAP_DURATION_MS = 280L
+
+/**
+ * Upper bound on poll-driven re-enqueues per image binding. A failed attempt that
+ * writes neither a cache entry nor a skip marker would otherwise be retried on every
+ * poll pass, decoding the whole page each time.
+ */
+private const val MAX_HEAL_ATTEMPTS = 2
 // KMK <--
