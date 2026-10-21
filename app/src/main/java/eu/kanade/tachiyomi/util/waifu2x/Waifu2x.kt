@@ -115,8 +115,12 @@ object Waifu2x {
             resolvedBackend,
         )
 
-        // Fast path: if already initialized with same config, just update performance params and return
-        if (isRealCuganInitialized && lastRealCuganConfig == newConfig) {
+        // Fast path: if already initialized with the same Vulkan config, just update
+        // performance params and return. NPU readiness must be re-verified per call.
+        if (
+            isRealCuganInitialized && lastRealCuganConfig == newConfig &&
+            resolvedBackend == PROCESSING_BACKEND_VULKAN
+        ) {
             nativeUpdatePerformanceConfig(tileSleepMs, tileSize)
             return true
         }
@@ -138,9 +142,13 @@ object Waifu2x {
             }
 
             if (isRealCuganInitialized) {
-                // Model already loaded, just update performance params
                 nativeUpdatePerformanceConfig(tileSleepMs, tileSize)
-                return true
+                return initializeBackend(
+                    context,
+                    resolvedBackend,
+                    qnnModelName(model, scale, effectiveNoiseLevel, precision = currentConfig.precision),
+                    if (scale == 3) 14 else 18,
+                )
             }
 
             val assetPath = if (isPro) "realcugan-pro-models" else "realcugan-models"
@@ -159,22 +167,6 @@ object Waifu2x {
                 isPro,
             )
             if (isRealCuganInitialized) {
-                if (currentConfig.processingBackend == PROCESSING_BACKEND_QUALCOMM_NPU) {
-                    val variant = when (effectiveNoiseLevel) {
-                        1 -> "denoise1x"
-                        2 -> "denoise2x"
-                        3 -> "denoise3x"
-                        4 -> "conservative"
-                        else -> "no-denoise"
-                    }
-                    val precisionSuffix = if (currentConfig.precision == 2) "-int8" else ""
-                    val family = if (isPro) "pro" else "se"
-                    initializeQnnIfAvailable(
-                        context,
-                        "realcugan-$family-x$scale-$variant$precisionSuffix",
-                        padding = if (scale == 3) 14 else 18,
-                    )
-                }
                 lastRealCuganConfig = currentConfig
                 nativeUpdatePerformanceConfig(tileSleepMs, tileSize)
 
@@ -193,7 +185,13 @@ object Waifu2x {
                         "backend=${backendName(currentConfig.processingBackend)}",
                 )
             }
-            isRealCuganInitialized
+            isRealCuganInitialized &&
+                initializeBackend(
+                    context,
+                    resolvedBackend,
+                    qnnModelName(model, scale, effectiveNoiseLevel, precision = currentConfig.precision),
+                    if (scale == 3) 14 else 18,
+                )
         }
     }
 
@@ -223,9 +221,13 @@ object Waifu2x {
         }
 
         if (isRealEsrganInitialized) {
-            // Update throttling
             nativeUpdatePerformanceConfig(tileSleepMs, tileSize)
-            return true
+            return initializeBackend(
+                context,
+                resolvedBackend,
+                qnnModelName(MODEL_REAL_ESRGAN_ANIME, outputScale, 0, style, precision = config.precision),
+                if (isPhotoStyle) 32 else 16,
+            )
         }
 
         val assetPath = if (isPhotoStyle) {
@@ -247,25 +249,6 @@ object Waifu2x {
             config.fp16Arithmetic,
         )
         if (isRealEsrganInitialized) {
-            if (config.processingBackend == PROCESSING_BACKEND_QUALCOMM_NPU) {
-                initializeQnnIfAvailable(
-                    context,
-                    if (isPhotoStyle) {
-                        if (config.precision == 2) {
-                            "realesrgan-general-x4v3-x2-int8"
-                        } else {
-                            "realesrgan-general-x4v3-x2"
-                        }
-                    } else {
-                        if (config.precision == 2) {
-                            "realesrgan-animevideov3-x2-int8"
-                        } else {
-                            "realesrgan-animevideov3-x2"
-                        }
-                    },
-                    padding = if (isPhotoStyle) 32 else 16,
-                )
-            }
             lastRealEsrganConfig = config
             nativeUpdatePerformanceConfig(tileSleepMs, tileSize)
 
@@ -280,7 +263,13 @@ object Waifu2x {
             val variant = if (isPhotoStyle) "general-x4v3" else "animevideov3"
             android.util.Log.d("Waifu2x", "Initialized Real-ESRGAN $variant: outputScale=$outputScale, tileSleepMs=$tileSleepMs, tileSize=$tileSize, precision=${config.precision}, backend=${backendName(config.processingBackend)}")
         }
-        isRealEsrganInitialized
+        isRealEsrganInitialized &&
+            initializeBackend(
+                context,
+                resolvedBackend,
+                qnnModelName(MODEL_REAL_ESRGAN_ANIME, outputScale, 0, style, precision = config.precision),
+                if (isPhotoStyle) 32 else 16,
+            )
     }
 
     private data class GenericModelConfig(val precision: Int, val fp16Arithmetic: Boolean)
@@ -459,7 +448,12 @@ object Waifu2x {
 
         if (isW2xExInitialized) {
             nativeUpdatePerformanceConfig(tileSleepMs, tileSize)
-            return true
+            return initializeBackend(
+                context,
+                resolvedBackend,
+                qnnModelName(model, effectiveScale, 0, precision = config.precision),
+                selectedModel.padding,
+            )
         }
 
         isW2xExInitialized = nativeInitW2xEx(
@@ -471,18 +465,6 @@ object Waifu2x {
             selectedModel.padding,
         )
         if (isW2xExInitialized) {
-            val qnnModel = when (model) {
-                MODEL_W2XEX_PHOTO_SMALL -> "w2xex-photo-small-x2"
-                MODEL_SPAN_NOMOSUNI_PHOTO -> "span-nomosuni-x2"
-                else -> null
-            }
-            if (config.processingBackend == PROCESSING_BACKEND_QUALCOMM_NPU && qnnModel != null) {
-                initializeQnnIfAvailable(
-                    context,
-                    if (config.precision == 2) "$qnnModel-int8" else qnnModel,
-                    padding = selectedModel.padding,
-                )
-            }
             lastW2xExConfig = config
             nativeUpdatePerformanceConfig(tileSleepMs, tileSize)
 
@@ -498,7 +480,13 @@ object Waifu2x {
                 "Initialized generic ncnn model: $modelStem, scale=$effectiveScale, precision=${config.precision}, backend=${backendName(config.processingBackend)}",
             )
         }
-        isW2xExInitialized
+        isW2xExInitialized &&
+            initializeBackend(
+                context,
+                resolvedBackend,
+                qnnModelName(model, effectiveScale, 0, precision = config.precision),
+                selectedModel.padding,
+            )
     }
 
     // Reuse processRealCugan for all generic ncnn models
@@ -764,17 +752,47 @@ object Waifu2x {
             model == MODEL_SPAN_NOMOSUNI_PHOTO
     }
 
-    fun resolveProcessingBackend(requestedBackend: Int, model: Int, scale: Int): Int {
-        return if (
-            requestedBackend == PROCESSING_BACKEND_QUALCOMM_NPU &&
-            isQualcommNpuModelSupported(model, scale) &&
-            isQualcommNpuAvailable()
-        ) {
-            PROCESSING_BACKEND_QUALCOMM_NPU
-        } else {
-            PROCESSING_BACKEND_VULKAN
+    fun qnnModelName(
+        model: Int,
+        scale: Int,
+        noise: Int,
+        realEsrganStyle: Int = REAL_ESRGAN_STYLE_ANIME,
+        precision: Int = 0,
+    ): String? {
+        if (!isQualcommNpuModelSupported(model, scale)) return null
+        // KMK --> bundled INT8 contexts stay selectable until the on-device
+        // QNN pipeline replaces the static context assets.
+        val precisionSuffix = if (precision == 2) "-int8" else ""
+        // KMK <--
+        return when (model) {
+            0, 1 -> {
+                val effectiveNoise = if (model == 1 && noise !in setOf(0, 3, 4)) 3 else noise
+                val variant = when (effectiveNoise) {
+                    1 -> "denoise1x"
+                    2 -> "denoise2x"
+                    3 -> "denoise3x"
+                    4 -> "conservative"
+                    else -> "no-denoise"
+                }
+                "realcugan-${if (model == 1) "pro" else "se"}-x$scale-$variant$precisionSuffix"
+            }
+            MODEL_REAL_ESRGAN_ANIME -> if (realEsrganStyle == REAL_ESRGAN_STYLE_PHOTO) {
+                "realesrgan-general-x4v3-x2$precisionSuffix"
+            } else {
+                "realesrgan-animevideov3-x2$precisionSuffix"
+            }
+            MODEL_W2XEX_PHOTO_SMALL -> "w2xex-photo-small-x2$precisionSuffix"
+            MODEL_SPAN_NOMOSUNI_PHOTO -> "span-nomosuni-x2$precisionSuffix"
+            else -> null
         }
     }
+
+    // Preserve an explicit NPU choice even if the device/model cannot execute it.
+    // Initialization then fails and the reader keeps the original image.
+    fun resolveProcessingBackend(requestedBackend: Int, model: Int, scale: Int): Int =
+        requestedBackend.takeIf {
+            it == PROCESSING_BACKEND_VULKAN || it == PROCESSING_BACKEND_QUALCOMM_NPU
+        } ?: PROCESSING_BACKEND_VULKAN
 
     fun resolvePrecision(requestedPrecision: Int, processingBackend: Int, model: Int, scale: Int): Int {
         val precision = requestedPrecision.coerceIn(0, 3)
@@ -788,16 +806,31 @@ object Waifu2x {
         return if (backend == PROCESSING_BACKEND_QUALCOMM_NPU) "Qualcomm NPU" else "Vulkan"
     }
 
+    private fun initializeBackend(context: Context, backend: Int, modelName: String?, padding: Int): Boolean {
+        nativeSetProcessingBackend(3) // Block execution until the selected model is ready.
+        val ready = runCatching {
+            when (backend) {
+                PROCESSING_BACKEND_VULKAN -> true
+                PROCESSING_BACKEND_QUALCOMM_NPU ->
+                    modelName != null && initializeQnnIfAvailable(context, modelName, padding)
+                else -> false
+            }
+        }.getOrDefault(false)
+        nativeSetProcessingBackend(if (ready) backend else 3)
+        return ready
+    }
+
     fun isQnnActive(): Boolean = try {
         nativeIsQnnInitialized()
     } catch (_: UnsatisfiedLinkError) {
         false
     }
 
-    private fun initializeQnnIfAvailable(context: Context, modelName: String, padding: Int) {
-        val htpArchitecture = QualcommHtp.architecture(context) ?: return
-        if (!isQnnRuntimeAvailable()) return
-        try {
+    private fun initializeQnnIfAvailable(context: Context, modelName: String, padding: Int): Boolean {
+        if (!isQualcommNpuAvailable()) return false
+        if (isQnnActive()) return true
+        return runCatching {
+            val htpArchitecture = QualcommHtp.architecture(context) ?: return@runCatching false
             val filename = "$modelName.v$htpArchitecture.bin"
             val directory = File(context.cacheDir, "qnn-contexts-v$htpArchitecture").apply { mkdirs() }
             val output = File(directory, filename)
@@ -817,9 +850,10 @@ object Waifu2x {
                 "Waifu2x",
                 "Qualcomm NPU ${if (active) "enabled" else "unavailable"}: $filename (HTP v$htpArchitecture)",
             )
-        } catch (e: Exception) {
-            android.util.Log.w("Waifu2x", "Unable to initialize Qualcomm NPU; using Vulkan", e)
-        }
+            active
+        }.onFailure {
+            android.util.Log.w("Waifu2x", "Unable to initialize Qualcomm NPU; enhancement skipped", it)
+        }.getOrDefault(false)
     }
 
     fun scaleBitmapNative(input: Bitmap, targetWidth: Int, targetHeight: Int): Bitmap? {
@@ -860,6 +894,7 @@ object Waifu2x {
     private external fun nativeAbortProcessing()
     private external fun nativeClearAbortProcessing()
     private external fun nativeSetUiBusy(busy: Boolean)
+    private external fun nativeSetProcessingBackend(backend: Int)
     private external fun nativeIsQnnRuntimeAvailable(): Boolean
     private external fun nativeInitQnn(contextPath: String, nativeLibraryDir: String, padding: Int): Boolean
     private external fun nativeIsQnnInitialized(): Boolean

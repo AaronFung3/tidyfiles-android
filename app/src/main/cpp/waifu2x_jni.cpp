@@ -30,6 +30,10 @@ static std::atomic<int> g_current_id{-1};
 static std::atomic<int> g_ui_busy{0};
 static std::atomic<bool> g_abort_processing{false};
 static bool g_realcugan_pro = false;
+// Processing backend requested by the host: 0 Vulkan, 1 Qualcomm NPU.
+// 3 blocks execution while a model is being prepared. Native inference must
+// never silently substitute another backend for an explicit NPU request.
+static int g_requested_backend = 0;
 
 namespace {
 
@@ -129,6 +133,13 @@ Java_eu_kanade_tachiyomi_util_waifu2x_Waifu2x_nativeIsQnnInitialized(
   return qnn_backend::is_initialized() ? JNI_TRUE : JNI_FALSE;
 }
 
+extern "C" JNIEXPORT void JNICALL
+Java_eu_kanade_tachiyomi_util_waifu2x_Waifu2x_nativeSetProcessingBackend(
+    JNIEnv *, jobject, jint backend) {
+  std::lock_guard<std::mutex> lock(g_lock);
+  g_requested_backend = backend;
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_eu_kanade_tachiyomi_util_waifu2x_Waifu2x_nativeInit(JNIEnv *env,
                                                          jobject thiz,
@@ -143,6 +154,7 @@ Java_eu_kanade_tachiyomi_util_waifu2x_Waifu2x_nativeInit(JNIEnv *env,
   g_realcugan_pro = false;
 
   qnn_backend::shutdown();
+  g_requested_backend = 0;
 
   ncnn::create_gpu_instance();
 
@@ -198,6 +210,7 @@ Java_eu_kanade_tachiyomi_util_waifu2x_Waifu2x_nativeInitWaifu2xUpconv7(
   g_realcugan_pro = false;
 
   qnn_backend::shutdown();
+  g_requested_backend = 0;
 
   ncnn::create_gpu_instance();
 
@@ -258,17 +271,17 @@ Java_eu_kanade_tachiyomi_util_waifu2x_Waifu2x_nativeProcess(JNIEnv *env,
     g_current_id.store(id);
 
     if (!g_waifu2x)
-      return bitmap;
+      return nullptr;
 
     AndroidBitmapInfo info{};
     if (AndroidBitmap_getInfo(env, bitmap, &info) < 0)
-      return bitmap;
+      return nullptr;
     if (info.format != ANDROID_BITMAP_FORMAT_RGBA_8888)
-      return bitmap;
+      return nullptr;
 
     void *pixels;
     if (AndroidBitmap_lockPixels(env, bitmap, &pixels) < 0)
-      return bitmap;
+      return nullptr;
 
     int w = info.width;
     int h = info.height;
@@ -279,7 +292,7 @@ Java_eu_kanade_tachiyomi_util_waifu2x_Waifu2x_nativeProcess(JNIEnv *env,
     ncnn::Mat packed_input(w, h, (size_t)4u, 1);
     if (packed_input.empty()) {
       AndroidBitmap_unlockPixels(env, bitmap);
-      return bitmap;
+      return nullptr;
     }
     for (int y = 0; y < h; y++) {
       memcpy((unsigned char *)packed_input.data + (size_t)y * w * 4,
@@ -342,7 +355,7 @@ Java_eu_kanade_tachiyomi_util_waifu2x_Waifu2x_nativeProcess(JNIEnv *env,
             }
           }
 
-          if (qnn_backend::is_initialized()) {
+          if (g_requested_backend == 1 && qnn_backend::is_initialized()) {
             const auto qnn_start = std::chrono::steady_clock::now();
             ret = qnn_backend::process_rgba(
                 static_cast<const uint8_t *>(packed_input.data), w, h, w * 4,
@@ -357,13 +370,16 @@ Java_eu_kanade_tachiyomi_util_waifu2x_Waifu2x_nativeProcess(JNIEnv *env,
                  static_cast<long long>(qnn_ms));
           }
 
-          // QNN success needs no NCNN analysis. On fallback, share the same
-          // plan between fused-path selection and staged tile processing.
+          // An explicitly selected NPU never falls through to NCNN on failure.
+          // On the Vulkan path, share the same plan between fused-path
+          // selection and staged tile processing.
           const periodic_texture_guard::TilePlan *ncnn_texture_plan = nullptr;
-          if (ret != 0 && !g_abort_processing.load()) {
+          if (g_requested_backend == 0 && ret != 0 &&
+              !g_abort_processing.load()) {
             ncnn_texture_plan = &texture_analysis.plan(g_waifu2x->tilesize);
           }
-          if (ret != 0 && !g_abort_processing.load() &&
+          if (g_requested_backend == 0 && ret != 0 &&
+              !g_abort_processing.load() &&
               ncnn_texture_plan && !ncnn_texture_plan->any_risky &&
               g_waifu2x->has_gpu_pipeline()) {
             const auto fused_start = std::chrono::steady_clock::now();
@@ -378,7 +394,8 @@ Java_eu_kanade_tachiyomi_util_waifu2x_Waifu2x_nativeProcess(JNIEnv *env,
                  static_cast<long long>(fused_ms));
           }
 
-          if (ret != 0 && !g_abort_processing.load()) {
+          if (g_requested_backend == 0 && ret != 0 &&
+              !g_abort_processing.load()) {
             LOGD("Fused GPU pipeline unavailable for this image; retrying staged path");
             const auto staged_start = std::chrono::steady_clock::now();
             ncnn::Mat in = ncnn::Mat::from_pixels(
@@ -413,7 +430,15 @@ Java_eu_kanade_tachiyomi_util_waifu2x_Waifu2x_nativeProcess(JNIEnv *env,
 
   if (ret != 0 || !outBitmap) {
     LOGE("Waifu2x process failed or aborted");
-    return bitmap; // Return original on failure
+    if (outBitmap) {
+      jclass cls = env->GetObjectClass(outBitmap);
+      env->CallVoidMethod(outBitmap,
+                          env->GetMethodID(cls, "recycle", "()V"));
+      env->DeleteLocalRef(cls);
+    }
+    // Caller retains the original; a failed result must never reach the
+    // enhancement cache as if it had been produced by the model.
+    return nullptr;
   }
 
   return outBitmap;
@@ -492,6 +517,7 @@ Java_eu_kanade_tachiyomi_util_waifu2x_Waifu2x_nativeDestroy(JNIEnv *env,
   g_abort_processing.store(true);
   std::lock_guard<std::mutex> lock(g_lock);
   qnn_backend::shutdown();
+  g_requested_backend = 0;
   if (g_waifu2x) {
     delete g_waifu2x;
     g_waifu2x = nullptr;
@@ -526,6 +552,7 @@ Java_eu_kanade_tachiyomi_util_waifu2x_Waifu2x_nativeInitAnime4K(
     JNIEnv *env, jobject thiz, jobjectArray shaders, jobjectArray names) {
   std::lock_guard<std::mutex> lock(g_lock);
   qnn_backend::shutdown();
+  g_requested_backend = 0;
   if (g_anime4k)
     delete g_anime4k;
   g_anime4k = new Anime4K();
@@ -603,6 +630,7 @@ Java_eu_kanade_tachiyomi_util_waifu2x_Waifu2x_nativeInitRealCugan(
   g_realcugan_pro = is_pro == JNI_TRUE;
 
   qnn_backend::shutdown();
+  g_requested_backend = 0;
 
   ncnn::create_gpu_instance();
 
@@ -700,6 +728,7 @@ Java_eu_kanade_tachiyomi_util_waifu2x_Waifu2x_nativeInitRealESRGAN(
   g_realcugan_pro = false;
 
   qnn_backend::shutdown();
+  g_requested_backend = 0;
 
   ncnn::create_gpu_instance();
 
@@ -750,6 +779,7 @@ Java_eu_kanade_tachiyomi_util_waifu2x_Waifu2x_nativeInitW2xEx(
   g_realcugan_pro = false;
 
   qnn_backend::shutdown();
+  g_requested_backend = 0;
 
   ncnn::create_gpu_instance();
 
@@ -796,6 +826,11 @@ Java_eu_kanade_tachiyomi_util_waifu2x_Waifu2x_nativeInitNose(
   std::lock_guard<std::mutex> lock(g_lock);
   g_abort_processing = false;
   g_realcugan_pro = false;
+
+  // Nose init never cleared a previously selected NPU context, so Nose pages
+  // could be routed through a stale QNN model. Reset both before loading.
+  qnn_backend::shutdown();
+  g_requested_backend = 0;
 
   ncnn::create_gpu_instance();
 
