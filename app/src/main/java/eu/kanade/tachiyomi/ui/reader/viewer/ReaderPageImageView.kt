@@ -309,11 +309,13 @@ open class ReaderPageImageView @JvmOverloads constructor(
      */
     private fun enhancementBackendName(): String {
         if (!realCuganEnabled) return ""
-        return if (preferences.realCuganProcessingBackend().get() == Waifu2x.PROCESSING_BACKEND_QUALCOMM_NPU) {
-            "QNN"
-        } else {
-            "Vulkan"
+        // KMK -->
+        return when (preferences.realCuganProcessingBackend().get()) {
+            Waifu2x.PROCESSING_BACKEND_QUALCOMM_NPU -> "QNN"
+            Waifu2x.PROCESSING_BACKEND_MEDIATEK_NPU -> "LiteRT"
+            else -> "Vulkan"
         }
+        // KMK <--
     }
     // KMK <--
 
