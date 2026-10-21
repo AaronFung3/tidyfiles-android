@@ -10,6 +10,7 @@ import android.graphics.RectF
 import android.graphics.drawable.Animatable
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
+import android.os.Looper
 import android.util.AttributeSet
 import android.util.TypedValue
 import android.view.GestureDetector
@@ -81,6 +82,7 @@ import tachiyomi.i18n.kmk.KMR
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import uy.kohesive.injekt.injectLazy
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.roundToInt
 
 /**
@@ -152,7 +154,7 @@ open class ReaderPageImageView @JvmOverloads constructor(
     // owns presentation state.
     private var pageView: View? = null
     private var currentLoadedUri: String? = null
-    private var lastStatusText: String? = null
+    private val statusUpdateVersion = AtomicInteger()
 
     // KMK -->
     // Incremented on every new image binding (and on recycle/detach); async enhanced-cache
@@ -189,6 +191,7 @@ open class ReaderPageImageView @JvmOverloads constructor(
 
     // KMK -->
     private var processingJob: Job? = null
+    private var processingKey: EnhancementPollKey? = null
     private var enhancedBitmap: Bitmap? = null
     private var processedSwapView: SubsamplingScaleImageView? = null
     private var outgoingProcessedView: SubsamplingScaleImageView? = null
@@ -233,8 +236,7 @@ open class ReaderPageImageView @JvmOverloads constructor(
                         withUIContext {
                             if (!enabled) {
                                 statusView.isVisible = false
-                            } else if (!lastStatusText.isNullOrEmpty()) {
-                                statusView.text = lastStatusText
+                            } else if (!statusView.text.isNullOrEmpty()) {
                                 statusView.isVisible = true
                                 statusView.bringToFront()
                             }
@@ -256,7 +258,9 @@ open class ReaderPageImageView @JvmOverloads constructor(
     // KMK <--
 
     // KMK -->
+    private var statusViewCreated = false
     private val statusView: TextView by lazy {
+        statusViewCreated = true
         TextView(context).apply {
             layoutParams = LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply {
                 gravity = Gravity.BOTTOM or Gravity.START
@@ -281,17 +285,20 @@ open class ReaderPageImageView @JvmOverloads constructor(
         }
     }
 
+    protected fun bringEnhancementStatusToFront() {
+        if (statusViewCreated) statusView.bringToFront()
+    }
+
     private fun updateStatus(text: String?) {
-        lastStatusText = text
-        post {
-            if (suppressDefaultStatus || !realCuganShowStatus || text.isNullOrEmpty()) {
-                statusView.isVisible = false
-                return@post
+        val version = statusUpdateVersion.incrementAndGet()
+        val revision = imageRevision
+        val applyStatus = Runnable {
+            // An older poll may still be posted when a new status or binding arrives.
+            if (version == statusUpdateVersion.get() && revision == imageRevision) {
+                statusView.updateEnhancementStatus(text.takeIf { !suppressDefaultStatus && realCuganShowStatus })
             }
-            if (statusView.text != text) statusView.text = text
-            statusView.isVisible = true
-            statusView.bringToFront()
         }
+        if (Looper.myLooper() == Looper.getMainLooper()) applyStatus.run() else post(applyStatus)
     }
 
     // KMK -->
@@ -543,7 +550,7 @@ open class ReaderPageImageView @JvmOverloads constructor(
                         }
 
                         bringToFront()
-                        statusView.bringToFront()
+                        bringEnhancementStatusToFront()
                         pageView = this@apply
                         val revealStart = processedTransitionStartFraction.coerceIn(0f, 1f)
                         val revealEnd = processedTransitionEndFraction.coerceIn(revealStart, 1f)
@@ -752,6 +759,7 @@ open class ReaderPageImageView @JvmOverloads constructor(
     fun setImage(drawable: Drawable, config: Config) {
         // KMK -->
         imageRevision++
+        updateStatus(null)
         processingJob?.cancel()
         currentCachedFile = null
         enhancedRecoveryCount = 0
@@ -770,6 +778,7 @@ open class ReaderPageImageView @JvmOverloads constructor(
     fun setImage(source: BufferedSource, isAnimated: Boolean, config: Config, streamFn: (() -> java.io.InputStream)? = null) {
         // KMK -->
         imageRevision++
+        updateStatus(null)
         processingJob?.cancel()
         currentCachedFile = null
         enhancedRecoveryCount = 0
@@ -788,6 +797,7 @@ open class ReaderPageImageView @JvmOverloads constructor(
     // KMK -->
     fun recycle() {
         imageRevision++
+        updateStatus(null)
         currentCachedFile = null
         originalStreamFn = null
         clearProcessedSwapView()
@@ -929,7 +939,7 @@ open class ReaderPageImageView @JvmOverloads constructor(
                 enhancedOverlay.setImageBitmap(previewBitmap)
                 enhancedOverlay.alpha = 1f
                 enhancedOverlay.isVisible = true
-                statusView.bringToFront()
+                bringEnhancementStatusToFront()
                 enhancedBitmap = previewBitmap
                 isSettingProcessedImage = true
                 pageView?.alpha = 0f
@@ -1151,6 +1161,7 @@ open class ReaderPageImageView @JvmOverloads constructor(
 
         pageView = createSubsamplingPageView()
         addView(pageView, MATCH_PARENT, MATCH_PARENT)
+        bringEnhancementStatusToFront()
     }
 
     // KMK -->
@@ -1293,8 +1304,12 @@ open class ReaderPageImageView @JvmOverloads constructor(
         streamFn: (() -> java.io.InputStream)? = null,
         originalData: Any? = null,
     ) {
-        if (isSettingProcessedImage || !realCuganEnabled || !enhancementDisplayEnabled) {
-            updateStatus(if (realCuganEnabled && enhancementDisplayEnabled) null else context.stringResource(KMR.strings.reader_status_raw))
+        if (isSettingProcessedImage) {
+            updateStatus(null)
+            return
+        }
+        if (!realCuganEnabled || !enhancementDisplayEnabled) {
+            updateStatus(context.stringResource(KMR.strings.reader_status_raw))
             return
         }
 
@@ -1408,6 +1423,15 @@ open class ReaderPageImageView @JvmOverloads constructor(
     /**
      * Start or restart the polling job to monitor enhancement progress and update status.
      */
+    private data class EnhancementPollKey(
+        val revision: Int,
+        val mangaId: Long,
+        val chapterId: Long,
+        val pageIndex: Int,
+        val pageVariant: String,
+        val configHash: String,
+    )
+
     private fun startEnhancementPolling(
         mId: Long,
         cId: Long,
@@ -1416,7 +1440,10 @@ open class ReaderPageImageView @JvmOverloads constructor(
         originalData: Any? = null,
         streamFn: (() -> java.io.InputStream)? = null,
     ) {
+        val key = EnhancementPollKey(imageRevision, mId, cId, pIdx, enhancementVariant(), configHash)
+        if (processingKey == key && processingJob?.isActive == true) return
         processingJob?.cancel()
+        processingKey = key
         processingJob = viewScope.launchIO {
             try {
                 val pageVariant = enhancementVariant()
@@ -1582,6 +1609,7 @@ open class ReaderPageImageView @JvmOverloads constructor(
             }
         }
         addView(pageView, MATCH_PARENT, MATCH_PARENT)
+        bringEnhancementStatusToFront()
     }
 
     private fun setAnimatedImage(
