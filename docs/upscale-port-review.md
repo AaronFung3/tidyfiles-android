@@ -286,3 +286,48 @@
 - 引擎 3 文件 + 导出脚本与 b8b5da7 SHA-256 一致;`cpp/waifu2x.cpp` 与 v1.3.15 基线仅含本修复差异
 - `spotlessApply`/`spotlessCheck`、`:app:compileDebugKotlin`、`:app:testReleaseUnitTest`(waifu2x 包)通过
 - i18n 无改动;无新增非 base locale 字符串
+
+### 8.5 移植后修复 — 双页换入滞留(fix/upscale-double-page-swap)
+
+真机回归(1.3.16 移植后):双页(拆分/合并)下增强图偶发滞留——状态角标持续"处理中",直到手动翻页才换入;拆分模式的 InsertPage holder(独立 holder、独立轮询)尤为明显。调整 heal 次数上限无效。
+
+根因:`ReaderPageImageView` 轮询内的缓存检查是事件驱动单点(`shouldCheckCache` 仅由 `CacheEvent.Saved/Skipped` 置位);`CacheEvent` 流为 `replay=32/DROP_OLDEST`,事件可被后续事件挤出。同时 heal 分支的重新入队对"条目已在缓存"的页被 `ImageEnhancer.enhanceLazy` 的 isCached 早退吞掉(既不换入也不产生任何动作)。净效果:成品已在缓存而轮询不重查,唯一的其他缓存查询点是 `onPageSelected`(手动翻页)。拆分双页主页 holder 与 InsertPage holder 各自独立轮询同一缓存键,失效概率叠加;InsertPage holder 创建晚于 `onPageSplit`,其轮询启动晚于 worker 完成的窗口最大。
+
+补充根因(复查时确认):轮询的事件过滤器 `filter { it.affects(主键) }` 只匹配主半键——**合并双页副半的 Saved 事件对主半轮询天然不可达**。主半先完成时,副半的完成无法唤醒轮询,这是"副页无法换入/延迟换入"最直接的结构性机制(早于事件丢失就存在)。同键设计的拆分双页(主页/InsertPage 共用 `(index, "")`)不受此影响。
+
+修复(轮询兜底分支,requested=false 时):
+
+- 先重查缓存再入队:命中即换入(合并双页需两半齐,经 `buildEnhancedDisplaySource`);条目损坏走 `healInvalidEnhancedCache`(丢弃 + 重入队)后落穿既有 heal 逻辑。换入不再依赖单一缓存事件。
+- 事件过滤器追加副半键(`secondaryKey`):副半完成即时触发轮询的缓存检查,不再依赖 ≤500ms 的兜底轮询周期。
+- `ImageEnhancer.processRequest`:`dataProvider` 返回 null 从静默丢弃改为 WARN 日志(数据源消失与队列滞留在日志上可区分)。
+- `ImageEnhancer.onVisibleImageDisplayed`:首帧放行的 target 不匹配从静默改为 INFO 日志(`waitingForVisibleImage` 挂起从此可诊断)。
+
+复查确认的安全性边界:
+
+- 兜底重查块**不需要** `hasSplitPage` 守卫(对比 `currentEnhancedFile` 的首显守卫):轮询由 `processImageHelper` 启动(首帧后两帧),而 `onPageSplit` 的 InsertPage 插入在首帧前已 post 到主线程——轮询的生命周期总是晚于拆页插入,缓存命中时兄弟半页必然已存在。若未来把轮询启动点提前到首帧之前,必须补回该守卫。
+- 重查块对"真实未缓存页"只在入队成功前执行 1–2 次(入队后 requested=true 不再进入该分支),不产生持续磁盘轮询。
+- 任一半处理期间 `requested=true` 使轮询保持存活,两半齐后的下一兜底周期(或副半事件,见过滤器强化)即换入;合并双页"任一半先完成"的两种时序均闭环。
+- "无法合并 → RAW 退出"镜像既有 `shouldCheckCache` 路径语义;动图/宽页在正常流程中已被 `mergePages`/`splitDoublePages` 重构 holder(副页置空、revision 递增取消旧轮询),不会到达该分支。
+- `withUIContext` 被取消时 `transformedSource` 流依赖 GC 回收——与既有 `shouldCheckCache` 路径同模式,非本提交引入。
+
+### 8.6 真机回归定位与最终修复(三态恢复,fix/upscale-double-page-swap)
+
+真机日志(logcat 抓取 + 诊断日志两轮迭代)定位到仍滞留的完整机制,以 (5,6) 与 (13,14) spread 为例:
+
+1. 用户快速翻页途中(offscreen 预载,`currentGlobalPageIndex` 落后于 holder 位置),spread 的 holder 提前创建,主半先完成增强;
+2. 副半(或主半)的请求被剪枝窗口(以落后的 `currentGlobalPageIndex` 计算)剪掉;
+3. 轮询收到已完成半的 Saved 事件 → 兜底重查:命中半存在、缺失半不存在 → 不换入 → heal 窗口判定(同样以落后的 `currentGlobalPageIndex` 计算)**失败 → 轮询 RAW 退出**;
+4. 用户翻到该 spread → `onPageSelected` 重新入队缺失半 → 缺失半完成(Saved)——**但轮询已死,第二个 Saved 事件无人接收** → 两半永齐不了换入 → 角标"处理中"卡死。
+
+根因本质:**heal 窗口只应限制"重新入队"的频率(防无限解码),却连带杀死了观察者本身**——轮询的设计意图是"attach 期间持续观察,`onDetachedFromWindow` 才停止",窗口失败退出违背了这一点;且窗口按主半 index 计算,对"预载方向上的合并双页"系统性误杀(剪枝与 heal 用同一个落后锚点)。
+
+最终修复(轮询兜底分支重构为三态恢复):
+
+- **主半缓存 ✓、副半缺失**:有界重推副半(`Re-queueing sibling page N`),继续等待;
+- **主半缺失、副半缓存 ✓**(对称情形,第二轮复现发现):有界重推主半(`Re-queueing primary page N`),继续等待;
+- **两半都缺失**:保留原有按窗口的有界重推;窗口失败时**降级为 RAW 但轮询不退出**(`Poll degraded to raw`,每次绑定只打一次 WARN),继续观察事件——翻页回来时 `onPageSelected` 的重新入队/直接换入路径与活着的轮询互补;
+- 轮询的生命周期回归 `onDetachedFromWindow`;heal 重试次数上限(`MAX_HEAL_ATTEMPTS`)语义不变——它现在只限制解码重试,不再终止观察。
+
+真机验证:快速翻页 + 停留场景下,(1,2)/(3,4)/(7,8)/(17,18)/(19,20) 等曾被剪枝/滞留的 spread 全部被自动恢复换入;修复前必现的"处理中"卡死不再出现。诊断日志保留集(排查用临时日志已剔除):`Re-queueing sibling/primary`(WARN)、`Poll degraded to raw`(WARN)、`Fallback cannot merge/invalid entry`(WARN)、`ImageEnhancer` 的数据源丢弃 WARN 与首帧 target 不匹配 INFO。
+
+验证:`spotlessCheck`、`:app:compileDebugKotlin`、waifu2x 包 JVM 单测通过。
