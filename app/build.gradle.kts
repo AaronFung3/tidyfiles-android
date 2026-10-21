@@ -253,11 +253,9 @@ dependencies {
     // Qualcomm QNN runtime libraries (libQnnHtp.so, HTP stub/skel libs) for the NPU backend.
     implementation("com.qualcomm.qti:qnn-runtime:2.49.0")
 
-    // KMK -->
     // LiteRT runtime + MediaTek NeuroPilot dispatch for the MediaTek NPU backend.
     implementation("com.google.ai.edge.litert:litert:2.3.0")
     implementation("com.google.ai.edge.litert:litert-npu-runtime-mediatek:2.3.0")
-    // KMK <--
     // KMK <--
     // SY -->
     implementation(projects.i18nSy)

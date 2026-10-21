@@ -3,7 +3,6 @@ package eu.kanade.tachiyomi.util.mediatek
 import android.content.Context
 import android.os.Build
 import android.util.Log
-import eu.kanade.tachiyomi.BuildConfig
 import eu.kanade.tachiyomi.util.npu.NpuModelStatus
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -51,14 +50,7 @@ object MediaTekNpu {
     /** Blocks during compilation. Failed models are retried only by an explicit UI request. */
     @Synchronized
     fun prepare(context: Context, modelName: String, retry: Boolean = false): File? =
-        prepareInternal(context, modelName, retry, cpuValidationOnly = false)
-
-    /** Exercises the same C ABI and tile implementation on test devices without an MTK NPU. */
-    @Synchronized
-    internal fun prepareForCpuValidation(context: Context, modelName: String): File? {
-        check(BuildConfig.DEBUG)
-        return prepareInternal(context, modelName, retry = true, cpuValidationOnly = true)
-    }
+        prepareInternal(context, modelName, retry)
 
     @Synchronized
     fun initialize(context: Context, modelName: String): Boolean {
@@ -99,11 +91,10 @@ object MediaTekNpu {
         context: Context,
         modelName: String,
         retry: Boolean,
-        cpuValidationOnly: Boolean,
     ): File? {
-        if (!cpuValidationOnly && mutableStates.value[modelName] is NpuModelStatus.Failed && !retry) return null
+        if (mutableStates.value[modelName] is NpuModelStatus.Failed && !retry) return null
         return runCatching {
-            check(cpuValidationOnly || isDeviceSupported()) { "This device has no supported MediaTek NPU" }
+            check(isDeviceSupported()) { "This device has no supported MediaTek NPU" }
             val manifest = JSONObject(
                 context.assets.open("litert-models/manifest.json").bufferedReader().use { it.readText() },
             )
@@ -117,8 +108,7 @@ object MediaTekNpu {
                 Build.SUPPORTED_ABIS.first(),
             ).joinToString("|")
             val key = digest(identity.toByteArray()).take(32)
-            val root = if (cpuValidationOnly) "litert-cpu-validation" else "mediatek-npu"
-            val directory = File(context.noBackupFilesDir, "$root/$modelName/$key")
+            val directory = File(context.noBackupFilesDir, "mediatek-npu/$modelName/$key")
             check(directory.isDirectory || directory.mkdirs()) { "Unable to create model directory" }
             val model = File(directory, "model.tflite")
             if (!model.isFile || digest(model) != modelHash) {
@@ -134,20 +124,18 @@ object MediaTekNpu {
                     pending.delete()
                 }
             }
-            if (!cpuValidationOnly && mutableStates.value[modelName] is NpuModelStatus.Ready) return@runCatching model
-            if (!cpuValidationOnly) mutableStates.update { it + (modelName to NpuModelStatus.Preparing) }
-            val error = configure(context, modelName, model, cpuValidationOnly, prepareOnly = !cpuValidationOnly)
+            if (mutableStates.value[modelName] is NpuModelStatus.Ready) return@runCatching model
+            mutableStates.update { it + (modelName to NpuModelStatus.Preparing) }
+            val error = configure(context, modelName, model, cpuTest = false, prepareOnly = true)
             check(error.isEmpty()) { error }
-            if (!cpuValidationOnly) mutableStates.update { it + (modelName to NpuModelStatus.Ready(model)) }
+            mutableStates.update { it + (modelName to NpuModelStatus.Ready(model)) }
             directory.parentFile?.listFiles()?.filter {
                 it.isDirectory && it != directory
             }?.forEach { it.deleteRecursively() }
             model
         }.onFailure { error ->
             Log.w("MediaTekNpu", "Unable to prepare $modelName; enhancement skipped", error)
-            if (!cpuValidationOnly) {
-                mutableStates.update { it + (modelName to NpuModelStatus.Failed(error.message.orEmpty())) }
-            }
+            mutableStates.update { it + (modelName to NpuModelStatus.Failed(error.message.orEmpty())) }
         }.getOrNull()
     }
 

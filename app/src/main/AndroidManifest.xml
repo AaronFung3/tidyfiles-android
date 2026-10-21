@@ -73,6 +73,7 @@
         <uses-native-library android:name="libneuronusdk_adapter.9.mtk.so" android:required="false" />
         <uses-native-library android:name="libneuronusdk_adapter.10.mtk.so" android:required="false" />
         <uses-native-library android:name="libneuron_sys_util.mtk.so" android:required="false" />
+        <!-- KMK end -->
 
         <activity
             android:name=".ui.main.MainActivity"
