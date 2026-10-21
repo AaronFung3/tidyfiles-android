@@ -4,7 +4,7 @@
 被审对象:`komikku feature/image-upscale` 分支相对 `master` 的全部变更。
 结论先行:**核心链路(NCNN/Vulkan 推理、模型管理、Coil 解码管线、阅读器集成、设置 UI、QNN/NPU)已完整移植并在 SM8750 真机可用;发现并修复 2 个移植缺陷;另有 7 处有意差异(全部有理由),无未解释的遗漏。**
 
-> 后续同步:上游 1.3.11 / 1.3.12 的移植审查见 [§6](#6-1311--1312-同步审查--syncupscale-1-3-11)。
+> 后续同步:上游 1.3.11 / 1.3.12 的移植审查见 [§6](#6-1311--1312-同步审查--syncupscale-1-3-11);上游 1.3.15 的移植与审查收尾见 [§7](#7-1315-同步与审查收尾--featupscale-1-3-15--fixupscale-review-followup)。
 
 ---
 
@@ -176,3 +176,61 @@
 - ✅ `:app:spotlessCheck` 通过;i18n 模块零触碰,KMK/SY 岛完整
 - ✅ `assembleDebug` 通过
 - ✅ 18 个文件全部映射到提交信息声明,无范围蔓延
+
+## 7. 1.3.15 同步与审查收尾 — feat/upscale-1-3-15 + fix/upscale-review-followup
+
+参照系:`HaoweiLi97/mihon_img_upscale` 1ab1420(Release 1.3.15)/v1.3.15 标签。
+被审对象:本地 `master` 领先 `origin/master` 的 8 个提交(2026-10-21 合并,fast-forward 至 15d9b0a49),以及其后的审查收尾分支 `fix/upscale-review-followup`。
+结论先行:**8 个提交与上游 v1.3.15 语义对齐,引擎 cpp 7 个文件字节级一致(见 §7.4);审查发现 5 项问题,均已在收尾分支处置(4 项修复、1 项决定保留);新增 18 个 JVM 单测全部通过。**
+
+### 7.1 逐提交对账(8 个,2026-10-21 并入 master)
+
+| 提交 | 内容 | 对齐状态 |
+|---|---|---|
+| dcef7ec90 | 增强失败显式失败而非伪装模型输出:解码路径的 enhanced 结果所有权契约(ownsResult/finally 回收)、透明图拒收后保留原图 | ✅ 与上游 1.3.15 语义一致 |
+| 5d5d64ba1 | 缓存写盘队列防护:单槽 Channel + `pendingSaveKeys` 簿记、取消/清空不泄漏位图、`clear()` 与写盘以读写锁互斥(写盘持读锁全程) | ✅ 一致 |
+| e6d2b413a | 增强队列串行化与重试竞态:worker 在同一 monitor 下 poll、`requeueOnCancel` 簿记、`processRequest` 代际/身份校验、被取消尝试不得抑制替代请求的重排队 | ✅ 一致 |
+| f366fe980 | 状态标签跨轮询/重绑定稳定:`EnhancementPollKey`(revision+manga/chapter/page/variant/config)去重重启、`statusUpdateVersion` 拒绝陈旧回帖 | ✅ 一致 |
+| f2e7c7305 | **QNN 设备编译路线**:`assets/qnn-models` 15 个 FP16 DLC(33.6MB,取自 v1.3.15 release APK)取代 437MB 预编译 contexts;`QnnModelContexts` 按设备在 `noBackupFilesDir` 编译并持久化(缓存键含 CACHE_VERSION=20/QNN 2.49.0/DLC hash/HTP 架构/Build.FINGERPRINT/ABI,checksum 校验,新 context 就绪后惰性回收同模型旧 key 目录);删除 `strip-qnn.gradle.kts` 与 `-Pexclude-qnn-assets`;INT8 全退役,精度枚举收窄为 FP16/FP32/BF16(legacy 2 → FP16),QNN 缓存键固定 `_nf1`;`waifu2x_jni.cpp`/`spatial_qnn_runtime.cpp`/`qnn_context_bridge.cpp` 字节级恢复 | ✅ 一致(资产来源见 §7.4) |
+| 1f72f570a | **MediaTek NPU 后端**:`MediaTekNpu`(LiteRT 2.3.0 + NeuroPilot dispatch,17 个 tflite 32.8MB 设备编译,`litert-models/manifest.json` 校验和)、Manifest 6 个 `libneuron*` 可选 native-library、设置页后端枚举 + 准备状态(Preparing/Ready/Failed)+ 重试、默认后端 MTK 优先(次选 Qualcomm,回落 Vulkan)、`NpuModelStatus` 共享状态流 | ✅ 一致 |
+| 1715ba574 | zh-rCN 4 个字符串(联发科 NPU / NPU 准备状态×3) | ⚠️ 有意偏离 i18n 规则,见 §7.3-1 |
+| 15d9b0a49 | 状态徽标把 MediaTek NPU 处理页标注为 LiteRT(与后端实际运行时一致) | ✅ 一致 |
+
+上游自述 MediaTek 路径未在真机验证(其测试机为 SM8475,Qualcomm);komikku 同样未验证。
+
+### 7.2 审查收尾(fix/upscale-review-followup)
+
+审查发现的 5 项及处置:
+
+1. **zh-rCN 非 base locale 直接编辑(1715ba574)— 决定保留**。与 AGENTS.md "非 base locale 由 Weblate 接管"的硬规则冲突(自查项明确禁止);译者决定接受偏离并在此记录,理由是上游措辞直接可复用、避免中文用户在 Weblate 同步前长期看到英文设置文案。已知代价:Weblate 下次同步该 4 键可能冲突,届时以 Weblate 为准。
+2. **[已修] `AndroidManifest.xml` KMK 标记未闭合**:6 个 `libneuron*` 声明的 `<!-- KMK -->` 无闭合。XML 注释内容不允许 `--`,故闭合行写作 `<!-- KMK end -->`(XML 内 KMK 块的既定写法,自本提交起生效)。
+3. **[已修] `MediaTekNpu.prepareForCpuValidation` 死代码删除**:上游由 androidTest `MediaTekNpuDeviceTest` 调用,该测试未移植(§7.3-3),钩子在 komikku 无调用者。连同 `prepareInternal` 的 `cpuValidationOnly` 参数与 `litert-cpu-validation` 目录分支一并清理;JNI 侧 `nativeInitialize` 的 `cpuTest`/`prepareOnly` 参数保留(引擎接口字节级一致的前提)。
+4. **[已补] JVM 单测**:见 §7.5。
+5. **[已修] `app/build.gradle.kts` 冗余嵌套 KMK 标记**:litert 依赖本就在外层 KMK 块内,删除多余的 `// KMK -->`/`// KMK <--` 对。
+
+### 7.3 移植取舍与已决事项
+
+1. **zh-rCN 偏离**:同 §7.2-1,已决:保留。
+2. **QNN 资产路线**:选"FP16 DLC + 设备编译"替代"预编译 contexts 入库 + APK 剥离构建"。收益:仓库 −437MB、非 arm64 split 不再需要包后重写、DLC 与 runtime 版本解耦;代价:首次使用每模型一次秒级设备编译(失败显式化,UI 可重试),旧版本静态 context 用户升级后 `cacheDir/qnn-contexts-v*` 残留(无害,系统可回收)。
+3. **androidTest 维持不移植**(延续 §6.3-2):上游 `ImageEnhancementCacheTest`/`ImageEnhancerQueueTest`/`MediaTekNpuDeviceTest`/`QualcommHtpDeviceTest`/`NativeModelStartupTest` 均为设备 instrumentation,本 fork 无设备 CI。其中可纯 JVM 化的断言改写入 `app/src/test`(§7.5);位图/真机依赖的用例保持上游-only。`prepareForCpuValidation` 因此删除(§7.2-3)。
+4. **默认后端设备自适应**:`realCuganProcessingBackend` 默认值由常量 1(Qualcomm)改为 `Waifu2x.defaultProcessingBackend()`(MTK → MediaTek,Qualcomm HTP 可用 → Qualcomm,否则 Vulkan)。仅影响新装用户;升级用户保留既有存储值。
+
+### 7.4 机械检查(审查时复验)
+
+- ✅ 引擎 cpp 与上游 v1.3.15 字节级一致:`float_tile_processor.h`、`litert_backend.{h,cpp}`、`qnn_context_bridge.cpp`、`spatial_qnn_runtime.{h,cpp}`、`waifu2x_jni.cpp`(git blob 哈希对比);`CMakeLists.txt` 差异仅为构建集成(新增 3 源文件、litert 头文件路径、移除 HTP 架构硬编码)
+- ✅ `qnn-models` 15 个 DLC 与 `litert-models` 15 个 tflite 的 SHA-256 均与各自 `manifest.json` 一致,键与文件一一对应
+- ✅ `spotlessCheck` 通过;无 `exclude-qnn-assets`/`strip-qnn` 残留引用;`.gitattributes` 已补 `*.tflite binary`
+- ✅ i18n:base 新增 4 键合规;zh-rCN 为已记录的有意偏离(§7.2-1)
+
+### 7.5 单元测试(app/src/test,JVM)
+
+蓝本为上游 androidTest,JVM 化后可入 CI(`:app:testReleaseUnitTest`),共 18 用例:
+
+| 测试类 | 覆盖 |
+|---|---|
+| `ImageEnhancerPriorityTest` | 队列排序语义:可见页(3) > 副页(2) > 提升页(1) > 预载(0)、同级按目标距离、再按 FIFO;副页属于聚焦目标(对应上游 `queuedPagesFollowVisibleSpreadThenPromotionThenDistance` 的断言部分) |
+| `ImageEnhancementCacheKeyTest` | `CacheEvent.affects` 键匹配矩阵(Cleared 全命中);configHash 按后端分离(`_qv*_nf1`/`_mtv*`)、legacy INT8 → FP16、纹理守卫修订只作用于 Pro 与 SE denoise3、固定 2x 模型忽略偏好 scale |
+| `Waifu2xBackendResolutionTest` | NPU 模型支持矩阵(Pro 2x/3x,其余 2x,Vulkan-only 模型不可路由);`qnnModelName` 与捆绑资产名对齐(含 Pro noise 规范化);`resolveProcessingBackend` 保留显式 NPU 选择、拒绝越界;NPU 强制 FP16 |
+| `ImageEnhancementCacheDiscardTest` | compare-and-delete 语义:陈旧快照不得删除并发重存的新条目、匹配快照删除、无快照无条件删除(对应上游 `rejectingAnOldSnapshotDoesNotDeleteItsNewReplacement`) |
+
+实现说明:`discardCachedImage` 成功路径走 `android.util.Log`,JVM 测试内以 `mockkStatic(Log)` 局部放行(不改全局 `isReturnDefaultValues`);`ImageEnhancer`/`Waifu2x`/`QnnModelContexts`/`MediaTekNpu` 的 object 初始化在 JVM 安全(loadLibrary 均有兜底)。位图/Context 依赖的写盘与入队行为仍以真机验证为准。
