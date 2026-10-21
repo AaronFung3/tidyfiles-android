@@ -333,7 +333,18 @@ object ImageEnhancer {
     // releases the queue held by [waitingForVisibleImage].
     @Synchronized
     fun onVisibleImageDisplayed(pageIndex: Int, pageVariant: String = "") {
-        if (!waitingForVisibleImage || !isFocusedTarget(pageIndex, pageVariant)) return
+        if (!waitingForVisibleImage) return
+        if (!isFocusedTarget(pageIndex, pageVariant)) {
+            // KMK --> A held queue that never matches a visible frame deadlocks every
+            // page behind it; make the mismatch observable in the reader log.
+            logcat(LogPriority.INFO) {
+                "ImageEnhancer: Visible frame $pageIndex/$pageVariant does not match target " +
+                    "$targetPageIndex/$targetPageVariant " +
+                    "(secondary=$targetSecondaryPageIndex/$targetSecondaryPageVariant); queue stays held"
+            }
+            // KMK <--
+            return
+        }
         waitingForVisibleImage = false
         logcat(LogPriority.INFO) {
             "ImageEnhancer: First visible image displayed: $pageIndex/$pageVariant; releasing ${queue.size} queued requests"
@@ -487,7 +498,16 @@ object ImageEnhancer {
             logcat(LogPriority.DEBUG) {
                 "ImageEnhancer: Processing page ${req.pageIndex}/${req.pageVariant} (priority=${req.priority})"
             }
-            val data = req.dataProvider() ?: return
+            val data = req.dataProvider()
+            if (data == null) {
+                // KMK --> A dropped attempt must be observable: without this log a page
+                // whose source vanished looks identical to one stuck in the queue.
+                logcat(LogPriority.WARN) {
+                    "ImageEnhancer: Page ${req.pageIndex}/${req.pageVariant} has no readable source; dropping request"
+                }
+                // KMK <--
+                return
+            }
             if (req.generation != generation.get() || req.cancelled.get()) return
             Waifu2x.prepareProcessing()
             if (req.cancelled.get()) return

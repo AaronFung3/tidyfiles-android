@@ -1519,11 +1519,21 @@ open class ReaderPageImageView @JvmOverloads constructor(
                 // KMK --> bounded so a page that cannot be enhanced (for example an NPU model
                 // that failed to compile) is not decoded again on every poll pass.
                 var healAttempts = 0
+                // The degraded-raw state persists while the page stays outside the heal
+                // window, so it is logged once per poll instead of every 500 ms pass.
+                var degradedLogged = false
                 // KMK <--
                 var shouldCheckCache = true
+                // KMK --> a merged spread waits on both halves; affects() only matches the
+                // primary key, so the sibling half's Saved event could never wake this poll
+                // and the swap waited on the fallback pass below. Watch the sibling key too.
+                val secondaryKey = secondary?.chapter?.chapter?.id?.let { secCid ->
+                    ImageEnhancementCache.CacheKey(mId, secCid, secondary.index, configHash, variantOf(secondary))
+                }
                 val cacheEvents = ImageEnhancementCache.events
-                    .filter { it.affects(mId, cId, pIdx, configHash, pageVariant) }
+                    .filter { it.affects(mId, cId, pIdx, configHash, pageVariant) || it.key == secondaryKey }
                     .produceIn(this)
+                // KMK <--
                 // The queue may legitimately take longer than a minute for a tall webtoon page
                 // or a spread waiting on its sibling half. Keep observing while this frame is
                 // attached; onDetachedFromWindow cancels this job when it is no longer useful.
@@ -1590,29 +1600,115 @@ open class ReaderPageImageView @JvmOverloads constructor(
                     } else if (requested) {
                         updateStatus(context.stringResource(KMR.strings.reader_status_queued))
                     } else {
-                        // Not in queue, not cached - might need to re-enqueue
-                        val current = currentGlobalPageIndex
-                        val shouldHeal = pIdx >= current && pIdx <= current + preloadSize
-                        // KMK --> an attempt that produced neither a cache entry nor a skip marker
-                        // failed for good for this binding (for example an NPU model that could not
-                        // be compiled). Re-enqueueing forever would decode this page on every pass,
-                        // so give it a bounded number of attempts; scrolling the page back in or
-                        // changing the settings starts a new binding with a fresh counter.
-                        val canRetry = healAttempts < MAX_HEAL_ATTEMPTS
-                        if (shouldHeal && canRetry && !ImageEnhancementCache.isSkipped(mId, cId, pIdx, configHash, pageVariant)) {
-                            healAttempts++
-                            // KMK <--
-                            logcat(LogPriority.WARN) { "ReaderPageImageView: Polling re-enqueue page $pIdx/$pageVariant (cur=$current)" }
-                            // Only the focused variant may jump the queue; other variants sharing
-                            // the page index must not monopolize the high-priority queue.
-                            val isCurrent = ImageEnhancer.isFocusedTarget(pIdx, pageVariant)
-                            enqueueEnhancement(mId, cId, pIdx, highPriority = isCurrent, originalData = originalData, streamFn = streamFn)
-                            secondary?.let { enqueueSecondaryIfNeeded(mId, configHash, highPriority = isCurrent) }
-                        } else {
-                            updateStatus(context.stringResource(KMR.strings.reader_status_raw))
-                            delay(2000)
-                            return@launchIO
+                        // KMK -->
+                        // The request left the queue without this poll seeing its Saved/Skipped
+                        // event: the poll subscribes after the request is enqueued, and in
+                        // double-page modes a sibling holder watches the same key. Cache checks
+                        // are otherwise event-driven only, so a finished result could sit in
+                        // the cache until a page change re-ran onPageSelected. Re-check the
+                        // cache before treating this as a failure.
+                        val cachedFileNow = ImageEnhancementCache.getCachedImage(mId, cId, pIdx, configHash, pageVariant)
+                        val secondaryFileNow = secondaryCachedFile(mId, configHash)
+                        if (cachedFileNow != null && (secondary == null || secondaryFileNow != null)) {
+                            val transformedSource = buildEnhancedDisplaySource(cachedFileNow, secondaryFileNow)
+                            if (transformedSource != null) {
+                                withUIContext { setProcessedSource(cachedFileNow, transformedSource = transformedSource) }
+                                return@launchIO
+                            }
+                            if (secondaryFileNow != null) {
+                                // Cannot merge the enhanced halves - keep showing the original spread.
+                                logcat(LogPriority.WARN) { "ReaderPageImageView: Fallback cannot merge page $pIdx" }
+                                withUIContext { updateStatus(context.stringResource(KMR.strings.reader_status_raw)) }
+                                return@launchIO
+                            }
+                            val source = ImageEnhancementCache.readCachedImage(cachedFileNow)
+                            if (source != null) {
+                                withUIContext { setProcessedSource(cachedFileNow, transformedSource = source) }
+                                return@launchIO
+                            }
+                            logcat(LogPriority.WARN) { "ReaderPageImageView: Fallback invalid entry page $pIdx" }
+                            // The entry failed validation: drop it so the re-enqueue below
+                            // rebuilds it instead of being rejected as already-cached.
+                            healInvalidEnhancedCache(
+                                mId = mId,
+                                cId = cId,
+                                pIdx = pIdx,
+                                configHash = configHash,
+                                triggerData = originalData,
+                                streamFn = streamFn,
+                                forceCurrentPage = pIdx == currentGlobalPageIndex,
+                            )
                         }
+                        // KMK --> half-missing recoveries: the spread is one enhancement away
+                        // from being swappable in either direction, so re-queue just the missing
+                        // half (bounded) and keep waiting. Exiting here would strand the spread:
+                        // the heal window keys on the primary index and legitimately rejects it
+                        // while the reader is still scrolling toward this spread, and a completed
+                        // half's Saved event must not be lost. A degraded poll keeps observing
+                        // while attached; onDetachedFromWindow is what stops it.
+                        // Read the sibling from the live property rather than the poll-start
+                        // snapshot: a split can clear it after this job started, and the cache
+                        // helpers below already resolve it live. Mixing the two sources could
+                        // re-queue a sibling that no longer exists and burn a heal attempt.
+                        val secondaryNow = secondaryPage
+                        if (cachedFileNow != null && secondaryNow != null && secondaryFileNow == null) {
+                            if (isSecondarySkipped(mId, configHash) || healAttempts >= MAX_HEAL_ATTEMPTS) {
+                                withUIContext { updateStatus(context.stringResource(KMR.strings.reader_status_raw)) }
+                            } else {
+                                healAttempts++
+                                logcat(LogPriority.WARN) {
+                                    "ReaderPageImageView: Re-queueing sibling page ${secondaryNow.index} (primary of $pIdx cached)"
+                                }
+                                enqueueSecondaryIfNeeded(
+                                    mangaId = mId,
+                                    configHash = configHash,
+                                    highPriority = ImageEnhancer.isFocusedTarget(secondaryNow.index, variantOf(secondaryNow)),
+                                )
+                            }
+                        } else if (cachedFileNow == null && secondaryNow != null && secondaryFileNow != null) {
+                            if (ImageEnhancementCache.isSkipped(mId, cId, pIdx, configHash, pageVariant) || healAttempts >= MAX_HEAL_ATTEMPTS) {
+                                withUIContext { updateStatus(context.stringResource(KMR.strings.reader_status_raw)) }
+                            } else {
+                                healAttempts++
+                                logcat(LogPriority.WARN) {
+                                    "ReaderPageImageView: Re-queueing primary page $pIdx (sibling ${secondaryNow.index} cached)"
+                                }
+                                enqueueEnhancement(
+                                    mId = mId,
+                                    cId = cId,
+                                    pIdx = pIdx,
+                                    highPriority = ImageEnhancer.isFocusedTarget(pIdx, pageVariant),
+                                    originalData = originalData,
+                                    streamFn = streamFn,
+                                )
+                            }
+                        } else if (cachedFileNow == null) {
+                            // Not in queue, not cached - bounded windowed re-enqueue
+                            val current = currentGlobalPageIndex
+                            val shouldHeal = pIdx >= current && pIdx <= current + preloadSize
+                            val canRetry = healAttempts < MAX_HEAL_ATTEMPTS
+                            if (shouldHeal && canRetry && !ImageEnhancementCache.isSkipped(mId, cId, pIdx, configHash, pageVariant)) {
+                                healAttempts++
+                                logcat(LogPriority.WARN) { "ReaderPageImageView: Polling re-enqueue page $pIdx/$pageVariant (cur=$current)" }
+                                // Only the focused variant may jump the queue; other variants sharing
+                                // the page index must not monopolize the high-priority queue.
+                                val isCurrent = ImageEnhancer.isFocusedTarget(pIdx, pageVariant)
+                                enqueueEnhancement(mId, cId, pIdx, highPriority = isCurrent, originalData = originalData, streamFn = streamFn)
+                                secondaryNow?.let { enqueueSecondaryIfNeeded(mId, configHash, highPriority = isCurrent) }
+                            } else {
+                                // A page behind the heal window stays degraded for as long as
+                                // it is attached, so only the transition is a warning; the
+                                // repeated passes would otherwise flood the log every 500 ms.
+                                if (!degradedLogged) {
+                                    degradedLogged = true
+                                    logcat(LogPriority.WARN) {
+                                        "ReaderPageImageView: Poll degraded to raw page $pIdx (heal window failed, cur=$current, preload=$preloadSize)"
+                                    }
+                                }
+                                withUIContext { updateStatus(context.stringResource(KMR.strings.reader_status_raw)) }
+                            }
+                        }
+                        // KMK <--
                     }
 
                     val event = withTimeoutOrNull(500) {
