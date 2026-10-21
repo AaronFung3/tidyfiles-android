@@ -236,3 +236,53 @@
 | `ImageEnhancementCacheDiscardTest` | compare-and-delete 语义:陈旧快照不得删除并发重存的新条目、匹配快照删除、无快照无条件删除(对应上游 `rejectingAnOldSnapshotDoesNotDeleteItsNewReplacement`) |
 
 实现说明:`discardCachedImage` 成功路径走 `android.util.Log`,JVM 测试内以 `mockkStatic(Log)` 局部放行(不改全局 `isReturnDefaultValues`);`ImageEnhancer`/`Waifu2x`/`QnnModelContexts`/`MediaTekNpu` 的 object 初始化在 JVM 安全(loadLibrary 均有兜底)。位图/Context 依赖的写盘与入队行为仍以真机验证为准。
+
+## 8. 1.3.16 同步 — feat/upscale-1-3-16-sync
+
+参照系:`HaoweiLi97/mihon_img_upscale` cf6eacd(Release 1.3.16)+ b8b5da7(修正提交),合计即 v1.3.16 标签;基线为已移植的 1ab1420(v1.3.15)。
+结论先行:**引擎层(cpp、模型资产、导出脚本)字节级复制;宿主层 6 个文件语义重放;fork 特有的 spread 管线与 mpreg 解码器相关改动不适用(见 §8.3)。**
+
+### 8.1 上游两个提交的内容
+
+| 提交 | 内容 |
+|---|---|
+| cf6eacd | ① 重生成 Real-ESRGAN Photo NCNN 模型(x4.bin/x4.param,官方权重);② 读者队列/首帧:HttpPageLoader 先发布原始流并标 Ready,增强改异步入队;`ReaderPageImageView` 以 `hasDisplayedImage`+`pendingInitialEnhancement` 把增强推迟到首帧显示后两动画帧,`ImageEnhancer.waitingForVisibleImage`/`onVisibleImageDisplayed` 在首帧前挂起队列;③ 解码内存:`EnhancementImageDecoder.decodeToBitmap`(mpreg 解码器内采样)与 `ImageUtil.decodeBitmap` 直解,省去整帧中转;④ PagerPageHolder 释放时机(onDeselect recycle)、拆页裁剪画中裁(contentRect 替代 trimBitmapBorders)、初始选中恢复(hasReceivedSelection);PagerViewer `isSelectedHolder` + `currentGlobalPageIndex` 锚点;⑤ 缓存:saveQueue RENDEZVOUS、缓存键 `_rp1`;BUNDLED_MODEL_CACHE_VERSION 15→16 |
+| b8b5da7 | ① x4.param 的 Interp 残差上采样参数 `1=4 2=4` → `1=4.0 2=4.0`(NCNN 文本参数按拼写定类型,整型拼写被读作整型比特导致零尺寸 resize → 输出全黑);② `waifu2x.cpp` staged 推理显式检查 `ex.input`/`ex.extract` 返回码并 return -1,tile 失败由 continue 改 return -1(拒绝失败推理,防止黑图入缓存);③ 缓存键 `_rp1`→`_rp2`;BUNDLED_MODEL_CACHE_VERSION 16→17;④ androidTest `RealEsrganPhotoTest` |
+
+### 8.2 本次移植(分支 feat/upscale-1-3-16-sync)
+
+**引擎层(字节级复制,git archive 自 b8b5da7,SHA-256 复验一致):**
+
+| 文件 | 说明 |
+|---|---|
+| `app/src/main/cpp/waifu2x.cpp` | staged 推理失败显式化(b8b5da7;komikku 原文件与 v1.3.15 字节一致,复制后与上游 v1.3.16 一致) |
+| `app/src/main/assets/realesrgan-models/v3-general/x4.{bin,param}` | 官方权重重生成图(bin 2,435,261→2,435,272 字节;param 含 `1=4.0 2=4.0` 修正) |
+| `tools/ncnn/export_realesrgan_photo.py` | 新增导出脚本(权重尺寸/SHA256 校验、二进制写入警示、修正后的 resize 参数);komikku 首次引入 `tools/` 目录 |
+
+**宿主层(语义重放,KMK 标记;`android.util.Log.i` 调试日志按本仓库规范并入既有 `logcat`/省略):**
+
+| 文件 | 重放内容 |
+|---|---|
+| `HttpPageLoader.kt` | 加载器不再同步查缓存/初始化缓存:恒发布原始流 + Ready;增强经 `scope.launch` 异步入队(enhanceLazy 对已缓存/跳过页早退)。可见页的缓存换入由视图层 `processImageHelper`(缓存优先)承担 |
+| `ReaderPageImageView.kt` | `hasDisplayedImage`/`pendingInitialEnhancement`;`onImageLoaded` 记录首帧并 `notifyVisibleImageDisplayed()`(两动画帧后执行挂起回调 + `ImageEnhancer.onVisibleImageDisplayed`);`onPageSelected` 增强块加首帧门控;三个内联触发点(BitmapDrawable/SSIV 流/webtoon Coil)统一改为绑定时登记回调;`setImage`×2 与 `recycle()` 重置标记 |
+| `ImageEnhancer.kt` | `waitingForVisibleImage` 挂起 + `onVisibleImageDisplayed` 放行;worker poll 门控;`enhanceLazy` 在 runtime 初始化/缓存 I/O 之前捕获代数并去 `@Synchronized`,入队拆为 `@Synchronized enqueueRequest`(只保护内存队列状态,代数校验前置) |
+| `ImageEnhancementCache.kt` | 缓存键新增 `_rp$REAL_ESRGAN_PHOTO_NCNN_REVISION`(=2,仅 Real-ESRGAN Photo + Vulkan) |
+| `Waifu2x.kt` | `BUNDLED_MODEL_CACHE_VERSION` 17→18(komikku 版本线独立,取下一值),强制重取新模型资产 |
+| `PagerViewer.kt` | `isSelectedHolder`;`onReaderPageSelected` 锚定 `ReaderPageImageView.currentGlobalPageIndex`(初始 spread 可能在 holder 挂载前被选中) |
+| `PagerPageHolder.kt` | `hasReceivedSelection`;`onImageLoaded` 时若尚未收到选中且是当前选中 holder,则补发 `onPageSelected`(恢复 ImageEnhancer 目标页,避免首帧放行的 `isFocusedTarget` 校验失败导致队列永久挂起) |
+
+**测试:** `ImageEnhancementCacheKeyTest` 新增 `_rp2` 作用域用例(Photo+Vulkan 独有;Anime 风格/QNN/Real-CUGAN 不含)。
+
+### 8.3 不适用项(与 §6.3/§7.3 同类取舍)
+
+1. **mpreg 解码器路径 N/A**:`EnhancementImageDecoder.decodeToBitmap` 与 `ImageUtil.decodeBitmap` 的"解码直出位图"内存优化依赖 fork 私有 `ca.mpreg.imagedecoder`;komikku 用 `tachiyomi.decoder`(mihon 上游),`ImageUtil` 为上游文件,不移植。komikku 的增强解码仍走 `tachiyomi.decoder` 路径。
+2. **saveQueue RENDEZVOUS 不重放**:komikku 的写盘管线(capacity=1 Channel + `limitedParallelism(1)` 写盘 dispatcher,§5)与 RENDEZVOUS 同样把在飞增强位图上界压到两份(1 编码 + 1 缓冲/交接),fork 该项修复的意图已满足。
+3. **PagerPageHolder spread 管线改动 N/A**:fork 的 onDeselect recycle、`contentRect` 画中裁(替代 `trimBitmapBorders`)作用于其私有 spread/拆页管线(BookPageImageSource、halfStatusView 等),komikku 未移植该管线,双页路径沿用 SY `dualPageSplit`/`mergePages`;`hasReceivedSelection` 恢复逻辑与 fork 管线无关,已按 komikku 结构重放(见 §8.2)。
+4. **androidTest `RealEsrganPhotoTest` 维持不移植**(§7.3-3):设备 instrumentation;其可 JVM 化的断言(缓存键修订作用域)已入 `ImageEnhancementCacheKeyTest`。
+5. **CHANGELOG/versionCode 不移植**:komikku 版本与变更日志独立管理。
+
+### 8.4 机械检查(移植后执行,见提交前验证)
+
+- 引擎 3 文件 + 导出脚本与 b8b5da7 SHA-256 一致;`cpp/waifu2x.cpp` 与 v1.3.15 基线仅含本修复差异
+- `spotlessApply`/`spotlessCheck`、`:app:compileDebugKotlin`、`:app:testReleaseUnitTest`(waifu2x 包)通过
+- i18n 无改动;无新增非 base locale 字符串

@@ -19,6 +19,7 @@ import eu.kanade.tachiyomi.ui.reader.model.InsertPage
 import eu.kanade.tachiyomi.ui.reader.model.ReaderItem
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
 import eu.kanade.tachiyomi.ui.reader.model.ViewerChapters
+import eu.kanade.tachiyomi.ui.reader.viewer.ReaderPageImageView
 import eu.kanade.tachiyomi.ui.reader.viewer.Viewer
 import eu.kanade.tachiyomi.ui.reader.viewer.ViewerNavigation.NavigationRegion
 import kotlinx.coroutines.MainScope
@@ -247,6 +248,10 @@ abstract class PagerViewer(
         }
     }
 
+    // KMK -->
+    internal fun isSelectedHolder(holder: PagerPageHolder): Boolean =
+        adapter.joinedItems.getOrNull(pager.currentItem) == holder.item
+
     /**
      * Called when a [ReaderPage] is marked as active. It notifies the
      * activity of the change and requests the preload of the next chapter if this is the last page.
@@ -254,6 +259,11 @@ abstract class PagerViewer(
     private fun onReaderPageSelected(page: ReaderPage, allowPreload: Boolean, forward: Boolean, hasExtraPage: Boolean) {
         val pages = page.chapter.pages ?: return
         logcat { "onReaderPageSelected: ${page.number}/${pages.size}" }
+        // KMK -->
+        // ViewPager can select the initial spread before its holder has been added.
+        // Keep preloading anchored to the selected page even when that callback is missed.
+        ReaderPageImageView.currentGlobalPageIndex = page.index
+        // KMK <--
         activity.onPageSelected(page, hasExtraPage)
 
         // Notify holder of page change

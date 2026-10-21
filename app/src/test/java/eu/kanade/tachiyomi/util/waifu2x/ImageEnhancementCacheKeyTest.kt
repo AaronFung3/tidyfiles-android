@@ -81,6 +81,37 @@ class ImageEnhancementCacheKeyTest {
     }
 
     @Test
+    fun realEsrganPhotoGraphRevisionAppliesToPhotoStyleOnVulkanOnly() {
+        val photoVulkan = ImageEnhancementCache.getConfigHash(
+            noise = 0,
+            scale = 2,
+            model = Waifu2x.MODEL_REAL_ESRGAN_ANIME,
+            realEsrganStyle = Waifu2x.REAL_ESRGAN_STYLE_PHOTO,
+            processingBackend = Waifu2x.PROCESSING_BACKEND_VULKAN,
+        )
+        val animeStyleVulkan = ImageEnhancementCache.getConfigHash(
+            noise = 0,
+            scale = 2,
+            model = Waifu2x.MODEL_REAL_ESRGAN_ANIME,
+            realEsrganStyle = Waifu2x.REAL_ESRGAN_STYLE_ANIME,
+            processingBackend = Waifu2x.PROCESSING_BACKEND_VULKAN,
+        )
+        val photoQualcomm = ImageEnhancementCache.getConfigHash(
+            noise = 0,
+            scale = 2,
+            model = Waifu2x.MODEL_REAL_ESRGAN_ANIME,
+            realEsrganStyle = Waifu2x.REAL_ESRGAN_STYLE_PHOTO,
+            processingBackend = Waifu2x.PROCESSING_BACKEND_QUALCOMM_NPU,
+        )
+        val realCuganVulkan = ImageEnhancementCache.getConfigHash(noise = 0, scale = 2, model = 0)
+
+        assertTrue(photoVulkan.contains("_rp2"))
+        assertFalse(animeStyleVulkan.contains("_rp"))
+        assertFalse(photoQualcomm.contains("_rp"))
+        assertFalse(realCuganVulkan.contains("_rp"))
+    }
+
+    @Test
     fun fixedScaleModelsIgnoreTheScalePreference() {
         val fixedScaleModels = listOf(
             6, 8, Waifu2x.MODEL_W2XEX_PHOTO_SMALL, 16, 18, Waifu2x.MODEL_SPAN_NOMOSUNI_PHOTO, 3, 4, 5,

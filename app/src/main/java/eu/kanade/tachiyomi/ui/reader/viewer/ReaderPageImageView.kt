@@ -163,6 +163,13 @@ open class ReaderPageImageView @JvmOverloads constructor(
     private var currentCachedFile: java.io.File? = null
     private var originalStreamFn: (() -> java.io.InputStream)? = null
     private var enhancedRecoveryCount = 0
+
+    // Enhancement waits for the first original frame to be visible: the pending
+    // callback runs two animation frames after onImageLoaded, so the original
+    // decodes and draws before GPU/NPU work or a cached replacement competes for
+    // the renderer (upstream 1.3.16).
+    private var hasDisplayedImage = false
+    private var pendingInitialEnhancement: (() -> Unit)? = null
     // KMK <--
 
     // KMK -->
@@ -323,6 +330,9 @@ open class ReaderPageImageView @JvmOverloads constructor(
 
     @CallSuper
     open fun onImageLoaded() {
+        // KMK -->
+        hasDisplayedImage = true
+        // KMK <--
         onImageLoaded?.invoke()
         background = pageBackground
 
@@ -340,7 +350,36 @@ open class ReaderPageImageView @JvmOverloads constructor(
             isSettingProcessedImage = false
         }
         // KMK <--
+
+        // KMK -->
+        notifyVisibleImageDisplayed()
+        // KMK <--
     }
+
+    // KMK -->
+    /**
+     * onReady runs before drawing. Leave a complete frame for the original on screen
+     * before GPU/NPU work or a cached replacement can occupy the renderer, then run
+     * the deferred first enhancement and tell the enhancer the visible frame landed.
+     */
+    private fun notifyVisibleImageDisplayed() {
+        val revision = imageRevision
+        postOnAnimation {
+            postOnAnimation displayed@{
+                if (revision != imageRevision || !hasDisplayedImage) return@displayed
+                val enhance = pendingInitialEnhancement
+                pendingInitialEnhancement = null
+                enhance?.invoke()
+                if (isVisibleOnScreen()) {
+                    ImageEnhancer.onVisibleImageDisplayed(
+                        readerPage?.index ?: pageIndex,
+                        enhancementVariant(),
+                    )
+                }
+            }
+        }
+    }
+    // KMK <--
 
     @CallSuper
     open fun onImageLoadError(error: Throwable?) {
@@ -624,7 +663,13 @@ open class ReaderPageImageView @JvmOverloads constructor(
             )
         }
 
-        if (pIdx >= 0 && mId != -1L && cId != -1L && realCuganEnabled && enhancementDisplayEnabled) {
+        // KMK -->
+        // The selection callback can run before the holder's first frame is displayed;
+        // defer cache/enhancement work until then, when pendingInitialEnhancement runs.
+        if (hasDisplayedImage) notifyVisibleImageDisplayed()
+        // KMK <--
+
+        if (hasDisplayedImage && pIdx >= 0 && mId != -1L && cId != -1L && realCuganEnabled && enhancementDisplayEnabled) {
             ImageEnhancementCache.init(context)
             val configHash = enhancementConfigHash()
             val pageVariant = enhancementVariant()
@@ -777,6 +822,8 @@ open class ReaderPageImageView @JvmOverloads constructor(
     fun setImage(drawable: Drawable, config: Config) {
         // KMK -->
         imageRevision++
+        hasDisplayedImage = false
+        pendingInitialEnhancement = null
         updateStatus(null)
         processingJob?.cancel()
         currentCachedFile = null
@@ -796,6 +843,8 @@ open class ReaderPageImageView @JvmOverloads constructor(
     fun setImage(source: BufferedSource, isAnimated: Boolean, config: Config, streamFn: (() -> java.io.InputStream)? = null) {
         // KMK -->
         imageRevision++
+        hasDisplayedImage = false
+        pendingInitialEnhancement = null
         updateStatus(null)
         processingJob?.cancel()
         currentCachedFile = null
@@ -815,6 +864,8 @@ open class ReaderPageImageView @JvmOverloads constructor(
     // KMK -->
     fun recycle() {
         imageRevision++
+        hasDisplayedImage = false
+        pendingInitialEnhancement = null
         updateStatus(null)
         currentCachedFile = null
         originalStreamFn = null
@@ -1240,6 +1291,20 @@ open class ReaderPageImageView @JvmOverloads constructor(
         streamFn: (() -> java.io.InputStream)? = null,
         allowEnhancement: Boolean = true,
     ) = (pageView as? SubsamplingScaleImageView)?.apply {
+        // KMK -->
+        // Defer enhancement until the first original frame is displayed
+        // (see notifyVisibleImageDisplayed); one callback covers every decode path below.
+        pendingInitialEnhancement = if (allowEnhancement && realCuganEnabled && pageIndex >= 0 && mangaId != -1L) {
+            {
+                processImageHelper(
+                    streamFn = streamFn,
+                    originalData = (data as? BitmapDrawable)?.bitmap,
+                )
+            }
+        } else {
+            null
+        }
+        // KMK <--
         setDoubleTapZoomDuration(config.zoomDuration.getSystemScaledDuration())
         setMinimumScaleType(config.minimumScaleType)
         setMinimumDpi(1) // Just so that very small image will be fit for initial load
@@ -1261,9 +1326,6 @@ open class ReaderPageImageView @JvmOverloads constructor(
         when (data) {
             is BitmapDrawable -> {
                 setImageWithCurrentCrop(ImageSource.bitmap(data.bitmap))
-                // KMK -->
-                processImageHelper(originalData = data.bitmap)
-                // KMK <--
                 isVisible = true
             }
             is BufferedSource -> {
@@ -1271,12 +1333,6 @@ open class ReaderPageImageView @JvmOverloads constructor(
                     setHardwareConfig(ImageUtil.canUseHardwareBitmap(data))
                     setImageWithCurrentCrop(ImageSource.inputStream(data.inputStream()))
                     isVisible = true
-                    // KMK -->
-                    // Enhancement Logic for Stream Sources
-                    if (allowEnhancement && realCuganEnabled && pageIndex >= 0 && mangaId != -1L) {
-                        processImageHelper(streamFn = streamFn)
-                    }
-                    // KMK <--
                     return@apply
                 }
 
@@ -1303,13 +1359,6 @@ open class ReaderPageImageView @JvmOverloads constructor(
                     .crossfade(false)
                     .build()
                     .let(context.imageLoader::enqueue)
-
-                // KMK -->
-                // Enhancement Logic for Stream Sources (webtoon long-strip decode path)
-                if (allowEnhancement && realCuganEnabled && pageIndex >= 0 && mangaId != -1L) {
-                    processImageHelper(streamFn = streamFn)
-                }
-                // KMK <--
             }
             else -> {
                 throw IllegalArgumentException("Not implemented for class ${data::class.simpleName}")

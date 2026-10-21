@@ -26,9 +26,9 @@ object Waifu2x {
 
     // Bump when bundled model assets change so existing installations refresh their cache.
     // KMK -->
-    // Port of upstream 1.3.11: refresh enhancement caches for the corrected
-    // decoding (source-resolution input) and texture-guard processing.
-    const val BUNDLED_MODEL_CACHE_VERSION = "17"
+    // Bump to 18: the Real-ESRGAN Photo NCNN graph was regenerated from the official
+    // weights with corrected resize parameters (upstream 1.3.16).
+    const val BUNDLED_MODEL_CACHE_VERSION = "18"
     internal const val QNN_CONTEXT_CACHE_VERSION = QnnModelContexts.CACHE_VERSION
     // KMK <--
 

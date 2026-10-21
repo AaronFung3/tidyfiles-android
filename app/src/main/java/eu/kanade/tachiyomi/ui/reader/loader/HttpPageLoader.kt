@@ -9,7 +9,6 @@ import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.ui.reader.model.ReaderChapter
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
-import eu.kanade.tachiyomi.util.waifu2x.ImageEnhancementCache
 import eu.kanade.tachiyomi.util.waifu2x.ImageEnhancer
 import exh.source.isEhBasedSource
 import exh.util.DataSaver
@@ -22,6 +21,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.suspendCancellableCoroutine
 import logcat.LogPriority
@@ -237,44 +237,28 @@ internal class HttpPageLoader(
 
             // KMK --> Image enhancement (upscale)
             // Start with original stream
-            var streamSource = { chapterCache.getImageFile(imageUrl).inputStream() }
+            val streamSource = { chapterCache.getImageFile(imageUrl).inputStream() }
             // Keep a raw source available so enhancement can reprocess this page.
             page.enhancementStream = streamSource
 
-            // Check for enhanced version
+            // Download readiness describes the original, not model preparation.
+            // Always publish a stable original stream before optional enhancement
+            // work can wait on caches, runtime initialization, or the queue.
+            // Cached enhanced results are swapped in by the view for the visible page,
+            // and ImageEnhancer skips pages that are already cached or skipped.
+            page.stream = streamSource
+
             if (readerPreferences.realCuganEnabled().get()) {
-                val context = Injekt.get<Application>()
-                ImageEnhancementCache.init(context)
-
-                val mangaId = page.chapter.chapter.manga_id ?: -1L
-                val chapterId = page.chapter.chapter.id ?: -1L
-
-                if (mangaId != -1L && chapterId != -1L) {
-                    val configHash = ImageEnhancementCache.getConfigHash(readerPreferences)
-                    val cachedFile = ImageEnhancementCache.getCachedImage(
-                        mangaId,
-                        chapterId,
-                        page.index,
-                        configHash,
-                        page.enhancementKeySuffix,
-                    )
-                    if (cachedFile != null) {
-                        // Use enhanced stream
-                        streamSource = { cachedFile.inputStream() }
-                    } else {
-                        // Set the stream first so enhance can use it
-                        page.stream = streamSource
-
-                        // Not cached, trigger enhancement via unified decoder (Low priority for preload)
-                        logcat(LogPriority.DEBUG) { "HttpPageLoader: Triggering enhancement for page ${page.index}" }
+                scope.launch {
+                    try {
+                        val context = Injekt.get<Application>()
                         ImageEnhancer.enhance(context, page, false)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        logcat(LogPriority.WARN, e) { "HttpPageLoader: Unable to queue optional enhancement" }
                     }
                 }
-            }
-
-            // Set stream if not already set (for non-enhancement path or cached path)
-            if (page.stream == null) {
-                page.stream = streamSource
             }
             // KMK <--
             page.status = Page.State.Ready

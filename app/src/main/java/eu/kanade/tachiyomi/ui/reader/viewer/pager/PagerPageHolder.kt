@@ -71,6 +71,13 @@ class PagerPageHolder(
 
     private val scope = MainScope()
 
+    // KMK -->
+    // The initial selection may arrive before ViewPager exposes this holder;
+    // on first display, restore the selection-driven enhancement state
+    // (target prioritization) that was missed.
+    private var hasReceivedSelection = false
+    // KMK <--
+
     /**
      * Job for loading the page and processing changes to the page's status.
      */
@@ -610,9 +617,23 @@ class PagerPageHolder(
     }
 
     override fun onImageLoaded() {
+        // KMK -->
+        // Restore the missed selection before the first displayed frame releases
+        // the enhancement worker (see ImageEnhancer.onVisibleImageDisplayed).
+        if (!hasReceivedSelection && viewer.isSelectedHolder(this)) {
+            onPageSelected(forward = true)
+        }
+        // KMK <--
         super.onImageLoaded()
         progressIndicator?.hide()
     }
+
+    // KMK -->
+    override fun onPageSelected(forward: Boolean) {
+        hasReceivedSelection = true
+        super.onPageSelected(forward)
+    }
+    // KMK <--
 
     /**
      * Called when an image fails to decode.
