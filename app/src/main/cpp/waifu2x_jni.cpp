@@ -1,8 +1,9 @@
 #include "anime4k.h"
 #include "monochrome_guard.h"
-#include "openmp_runtime.h"
 #include "periodic_texture_guard.h"
+#include "openmp_runtime.h"
 #include "qnn_backend.h"
+#include "litert_backend.h"
 #include "waifu2x.h"
 #include <android/bitmap.h>
 #include <android/log.h>
@@ -30,9 +31,6 @@ static std::atomic<int> g_current_id{-1};
 static std::atomic<int> g_ui_busy{0};
 static std::atomic<bool> g_abort_processing{false};
 static bool g_realcugan_pro = false;
-// Processing backend requested by the host: 0 Vulkan, 1 Qualcomm NPU.
-// 3 blocks execution while a model is being prepared. Native inference must
-// never silently substitute another backend for an explicit NPU request.
 static int g_requested_backend = 0;
 
 namespace {
@@ -120,6 +118,7 @@ Java_eu_kanade_tachiyomi_util_waifu2x_Waifu2x_nativeInitQnn(
       ";/vendor/dsp/cdsp;/vendor/lib/rfsa/cdsp;/system/vendor/lib/rfsa/cdsp";
   setenv("ADSP_LIBRARY_PATH", dsp_paths.c_str(), 1);
   LOGD("QNN ADSP_LIBRARY_PATH=%s", dsp_paths.c_str());
+  litert_backend::shutdown();
   const bool initialized =
       qnn_backend::initialize(context_path_chars, static_cast<int>(padding));
   env->ReleaseStringUTFChars(native_library_dir, library_dir_chars);
@@ -140,6 +139,38 @@ Java_eu_kanade_tachiyomi_util_waifu2x_Waifu2x_nativeSetProcessingBackend(
   g_requested_backend = backend;
 }
 
+extern "C" JNIEXPORT jstring JNICALL
+Java_eu_kanade_tachiyomi_util_mediatek_MediaTekNpu_nativeInitialize(
+    JNIEnv *env, jobject, jstring model, jstring cache, jstring libraries,
+    jint scale, jint padding, jboolean cpu_test, jboolean prepare_only) {
+  std::lock_guard<std::mutex> lock(g_lock);
+#ifdef NDEBUG
+  if (cpu_test) return env->NewStringUTF("CPU validation is unavailable in release builds");
+#endif
+  const char *m = env->GetStringUTFChars(model, nullptr);
+  const char *c = env->GetStringUTFChars(cache, nullptr);
+  const char *l = env->GetStringUTFChars(libraries, nullptr);
+  std::string error;
+  if (prepare_only) {
+    // Vendor dispatch libraries may keep global environment state. Release an
+    // old model before preparing another; the next reader initialization reloads it.
+    litert_backend::shutdown();
+    error = litert_backend::prepare(m, c, l, scale, padding);
+  }
+  else if (!litert_backend::initialize(m, c, l, scale, padding, cpu_test))
+    error = litert_backend::last_error();
+  env->ReleaseStringUTFChars(model, m);
+  env->ReleaseStringUTFChars(cache, c);
+  env->ReleaseStringUTFChars(libraries, l);
+  return env->NewStringUTF(error.c_str());
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_eu_kanade_tachiyomi_util_mediatek_MediaTekNpu_nativeIsActive(JNIEnv *, jobject) {
+  std::lock_guard<std::mutex> lock(g_lock);
+  return litert_backend::is_npu_active() ? JNI_TRUE : JNI_FALSE;
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_eu_kanade_tachiyomi_util_waifu2x_Waifu2x_nativeInit(JNIEnv *env,
                                                          jobject thiz,
@@ -154,6 +185,7 @@ Java_eu_kanade_tachiyomi_util_waifu2x_Waifu2x_nativeInit(JNIEnv *env,
   g_realcugan_pro = false;
 
   qnn_backend::shutdown();
+  litert_backend::shutdown();
   g_requested_backend = 0;
 
   ncnn::create_gpu_instance();
@@ -210,6 +242,7 @@ Java_eu_kanade_tachiyomi_util_waifu2x_Waifu2x_nativeInitWaifu2xUpconv7(
   g_realcugan_pro = false;
 
   qnn_backend::shutdown();
+  litert_backend::shutdown();
   g_requested_backend = 0;
 
   ncnn::create_gpu_instance();
@@ -370,16 +403,19 @@ Java_eu_kanade_tachiyomi_util_waifu2x_Waifu2x_nativeProcess(JNIEnv *env,
                  static_cast<long long>(qnn_ms));
           }
 
+          if (g_requested_backend == 2 && litert_backend::is_initialized()) {
+            ret = litert_backend::process_rgba(
+                static_cast<const uint8_t *>(packed_input.data), w, h, w * 4,
+                static_cast<uint8_t *>(outPixels), outInfo.stride,
+                texture_analysis, &g_progress, &g_abort_processing);
+          }
+
           // An explicitly selected NPU never falls through to NCNN on failure.
-          // On the Vulkan path, share the same plan between fused-path
-          // selection and staged tile processing.
           const periodic_texture_guard::TilePlan *ncnn_texture_plan = nullptr;
-          if (g_requested_backend == 0 && ret != 0 &&
-              !g_abort_processing.load()) {
+          if (g_requested_backend == 0 && ret != 0 && !g_abort_processing.load()) {
             ncnn_texture_plan = &texture_analysis.plan(g_waifu2x->tilesize);
           }
-          if (g_requested_backend == 0 && ret != 0 &&
-              !g_abort_processing.load() &&
+          if (g_requested_backend == 0 && ret != 0 && !g_abort_processing.load() &&
               ncnn_texture_plan && !ncnn_texture_plan->any_risky &&
               g_waifu2x->has_gpu_pipeline()) {
             const auto fused_start = std::chrono::steady_clock::now();
@@ -394,8 +430,7 @@ Java_eu_kanade_tachiyomi_util_waifu2x_Waifu2x_nativeProcess(JNIEnv *env,
                  static_cast<long long>(fused_ms));
           }
 
-          if (g_requested_backend == 0 && ret != 0 &&
-              !g_abort_processing.load()) {
+          if (g_requested_backend == 0 && ret != 0 && !g_abort_processing.load()) {
             LOGD("Fused GPU pipeline unavailable for this image; retrying staged path");
             const auto staged_start = std::chrono::steady_clock::now();
             ncnn::Mat in = ncnn::Mat::from_pixels(
@@ -432,13 +467,10 @@ Java_eu_kanade_tachiyomi_util_waifu2x_Waifu2x_nativeProcess(JNIEnv *env,
     LOGE("Waifu2x process failed or aborted");
     if (outBitmap) {
       jclass cls = env->GetObjectClass(outBitmap);
-      env->CallVoidMethod(outBitmap,
-                          env->GetMethodID(cls, "recycle", "()V"));
+      env->CallVoidMethod(outBitmap, env->GetMethodID(cls, "recycle", "()V"));
       env->DeleteLocalRef(cls);
     }
-    // Caller retains the original; a failed result must never reach the
-    // enhancement cache as if it had been produced by the model.
-    return nullptr;
+    return nullptr; // Caller retains the original; failed results must not enter the cache.
   }
 
   return outBitmap;
@@ -517,6 +549,7 @@ Java_eu_kanade_tachiyomi_util_waifu2x_Waifu2x_nativeDestroy(JNIEnv *env,
   g_abort_processing.store(true);
   std::lock_guard<std::mutex> lock(g_lock);
   qnn_backend::shutdown();
+  litert_backend::shutdown();
   g_requested_backend = 0;
   if (g_waifu2x) {
     delete g_waifu2x;
@@ -552,6 +585,7 @@ Java_eu_kanade_tachiyomi_util_waifu2x_Waifu2x_nativeInitAnime4K(
     JNIEnv *env, jobject thiz, jobjectArray shaders, jobjectArray names) {
   std::lock_guard<std::mutex> lock(g_lock);
   qnn_backend::shutdown();
+  litert_backend::shutdown();
   g_requested_backend = 0;
   if (g_anime4k)
     delete g_anime4k;
@@ -630,6 +664,7 @@ Java_eu_kanade_tachiyomi_util_waifu2x_Waifu2x_nativeInitRealCugan(
   g_realcugan_pro = is_pro == JNI_TRUE;
 
   qnn_backend::shutdown();
+  litert_backend::shutdown();
   g_requested_backend = 0;
 
   ncnn::create_gpu_instance();
@@ -728,6 +763,7 @@ Java_eu_kanade_tachiyomi_util_waifu2x_Waifu2x_nativeInitRealESRGAN(
   g_realcugan_pro = false;
 
   qnn_backend::shutdown();
+  litert_backend::shutdown();
   g_requested_backend = 0;
 
   ncnn::create_gpu_instance();
@@ -779,6 +815,7 @@ Java_eu_kanade_tachiyomi_util_waifu2x_Waifu2x_nativeInitW2xEx(
   g_realcugan_pro = false;
 
   qnn_backend::shutdown();
+  litert_backend::shutdown();
   g_requested_backend = 0;
 
   ncnn::create_gpu_instance();
@@ -826,11 +863,6 @@ Java_eu_kanade_tachiyomi_util_waifu2x_Waifu2x_nativeInitNose(
   std::lock_guard<std::mutex> lock(g_lock);
   g_abort_processing = false;
   g_realcugan_pro = false;
-
-  // Nose init never cleared a previously selected NPU context, so Nose pages
-  // could be routed through a stale QNN model. Reset both before loading.
-  qnn_backend::shutdown();
-  g_requested_backend = 0;
 
   ncnn::create_gpu_instance();
 

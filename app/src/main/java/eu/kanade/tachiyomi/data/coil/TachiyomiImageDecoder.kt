@@ -247,7 +247,9 @@ class TachiyomiImageDecoder(private val resources: ImageSource, private val opti
                                         else -> 0
                                     }
                                     val tileSize = preferences.realCuganTileSize().get().coerceAtLeast(32)
-                                    val precision = preferences.realCuganPrecision().get().coerceIn(0, 3)
+                                    val precision =
+                                        preferences.realCuganPrecision().get().takeIf { it == 0 || it == 1 || it == 3 }
+                                            ?: 0
                                     val fp16Arithmetic = preferences.realCuganFp16Arithmetic().get()
 
                                     // Validate scale based on model capabilities

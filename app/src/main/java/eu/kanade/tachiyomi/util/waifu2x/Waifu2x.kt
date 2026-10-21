@@ -2,6 +2,8 @@ package eu.kanade.tachiyomi.util.waifu2x
 
 import android.content.Context
 import android.graphics.Bitmap
+import eu.kanade.tachiyomi.util.mediatek.MediaTekNpu
+import eu.kanade.tachiyomi.util.qnn.QnnModelContexts
 import eu.kanade.tachiyomi.util.qnn.QualcommHtp
 import logcat.LogPriority
 import tachiyomi.core.common.util.system.logcat
@@ -15,6 +17,7 @@ object Waifu2x {
 
     const val PROCESSING_BACKEND_VULKAN = 0
     const val PROCESSING_BACKEND_QUALCOMM_NPU = 1
+    const val PROCESSING_BACKEND_MEDIATEK_NPU = 2
     const val MODEL_REAL_ESRGAN_ANIME = 2
     const val MODEL_W2XEX_PHOTO_SMALL = 9
     const val MODEL_SPAN_NOMOSUNI_PHOTO = 19
@@ -25,11 +28,8 @@ object Waifu2x {
     // KMK -->
     // Port of upstream 1.3.11: refresh enhancement caches for the corrected
     // decoding (source-resolution input) and texture-guard processing.
-    // 1.3.14 rebuilt NPU contexts: bumped to 20 instead of upstream's 19 — our
-    // previous version file already said "19" and refresh is a string compare,
-    // so reusing it would leave stale contexts in place.
     const val BUNDLED_MODEL_CACHE_VERSION = "17"
-    internal const val QNN_CONTEXT_CACHE_VERSION = "20"
+    internal const val QNN_CONTEXT_CACHE_VERSION = QnnModelContexts.CACHE_VERSION
     // KMK <--
 
     @Volatile private var isInitialized = false
@@ -146,7 +146,7 @@ object Waifu2x {
                 return initializeBackend(
                     context,
                     resolvedBackend,
-                    qnnModelName(model, scale, effectiveNoiseLevel, precision = currentConfig.precision),
+                    qnnModelName(model, scale, effectiveNoiseLevel),
                     if (scale == 3) 14 else 18,
                 )
             }
@@ -189,7 +189,7 @@ object Waifu2x {
                 initializeBackend(
                     context,
                     resolvedBackend,
-                    qnnModelName(model, scale, effectiveNoiseLevel, precision = currentConfig.precision),
+                    qnnModelName(model, scale, effectiveNoiseLevel),
                     if (scale == 3) 14 else 18,
                 )
         }
@@ -225,7 +225,7 @@ object Waifu2x {
             return initializeBackend(
                 context,
                 resolvedBackend,
-                qnnModelName(MODEL_REAL_ESRGAN_ANIME, outputScale, 0, style, precision = config.precision),
+                qnnModelName(MODEL_REAL_ESRGAN_ANIME, outputScale, 0, style),
                 if (isPhotoStyle) 32 else 16,
             )
         }
@@ -267,7 +267,7 @@ object Waifu2x {
             initializeBackend(
                 context,
                 resolvedBackend,
-                qnnModelName(MODEL_REAL_ESRGAN_ANIME, outputScale, 0, style, precision = config.precision),
+                qnnModelName(MODEL_REAL_ESRGAN_ANIME, outputScale, 0, style),
                 if (isPhotoStyle) 32 else 16,
             )
     }
@@ -451,7 +451,7 @@ object Waifu2x {
             return initializeBackend(
                 context,
                 resolvedBackend,
-                qnnModelName(model, effectiveScale, 0, precision = config.precision),
+                qnnModelName(model, effectiveScale, 0),
                 selectedModel.padding,
             )
         }
@@ -484,7 +484,7 @@ object Waifu2x {
             initializeBackend(
                 context,
                 resolvedBackend,
-                qnnModelName(model, effectiveScale, 0, precision = config.precision),
+                qnnModelName(model, effectiveScale, 0),
                 selectedModel.padding,
             )
     }
@@ -561,6 +561,7 @@ object Waifu2x {
     /**
      * Reset Real-CUGAN to allow re-initialization with new settings.
      */
+    @Synchronized
     fun resetRealCugan() {
         isInitialized = false
         isRealCuganInitialized = false
@@ -743,6 +744,16 @@ object Waifu2x {
 
     fun isQualcommNpuAvailable(): Boolean = QualcommHtp.architecture() != null && isQnnRuntimeAvailable()
 
+    private val deviceDefaultBackend by lazy {
+        when {
+            MediaTekNpu.isDeviceSupported() -> PROCESSING_BACKEND_MEDIATEK_NPU
+            isQualcommNpuAvailable() -> PROCESSING_BACKEND_QUALCOMM_NPU
+            else -> PROCESSING_BACKEND_VULKAN
+        }
+    }
+
+    fun defaultProcessingBackend(): Int = deviceDefaultBackend
+
     fun isQualcommNpuModelSupported(model: Int, scale: Int): Boolean {
         if (model == 1) return scale == 2 || scale == 3
         if (scale != 2) return false
@@ -752,18 +763,8 @@ object Waifu2x {
             model == MODEL_SPAN_NOMOSUNI_PHOTO
     }
 
-    fun qnnModelName(
-        model: Int,
-        scale: Int,
-        noise: Int,
-        realEsrganStyle: Int = REAL_ESRGAN_STYLE_ANIME,
-        precision: Int = 0,
-    ): String? {
+    fun qnnModelName(model: Int, scale: Int, noise: Int, realEsrganStyle: Int = REAL_ESRGAN_STYLE_ANIME): String? {
         if (!isQualcommNpuModelSupported(model, scale)) return null
-        // KMK --> bundled INT8 contexts stay selectable until the on-device
-        // QNN pipeline replaces the static context assets.
-        val precisionSuffix = if (precision == 2) "-int8" else ""
-        // KMK <--
         return when (model) {
             0, 1 -> {
                 val effectiveNoise = if (model == 1 && noise !in setOf(0, 3, 4)) 3 else noise
@@ -774,15 +775,15 @@ object Waifu2x {
                     4 -> "conservative"
                     else -> "no-denoise"
                 }
-                "realcugan-${if (model == 1) "pro" else "se"}-x$scale-$variant$precisionSuffix"
+                "realcugan-${if (model == 1) "pro" else "se"}-x$scale-$variant"
             }
             MODEL_REAL_ESRGAN_ANIME -> if (realEsrganStyle == REAL_ESRGAN_STYLE_PHOTO) {
-                "realesrgan-general-x4v3-x2$precisionSuffix"
+                "realesrgan-general-x4v3-x2"
             } else {
-                "realesrgan-animevideov3-x2$precisionSuffix"
+                "realesrgan-animevideov3-x2"
             }
-            MODEL_W2XEX_PHOTO_SMALL -> "w2xex-photo-small-x2$precisionSuffix"
-            MODEL_SPAN_NOMOSUNI_PHOTO -> "span-nomosuni-x2$precisionSuffix"
+            MODEL_W2XEX_PHOTO_SMALL -> "w2xex-photo-small-x2"
+            MODEL_SPAN_NOMOSUNI_PHOTO -> "span-nomosuni-x2"
             else -> null
         }
     }
@@ -790,20 +791,18 @@ object Waifu2x {
     // Preserve an explicit NPU choice even if the device/model cannot execute it.
     // Initialization then fails and the reader keeps the original image.
     fun resolveProcessingBackend(requestedBackend: Int, model: Int, scale: Int): Int =
-        requestedBackend.takeIf {
-            it == PROCESSING_BACKEND_VULKAN || it == PROCESSING_BACKEND_QUALCOMM_NPU
-        } ?: PROCESSING_BACKEND_VULKAN
+        requestedBackend.takeIf { it in PROCESSING_BACKEND_VULKAN..PROCESSING_BACKEND_MEDIATEK_NPU }
+            ?: PROCESSING_BACKEND_VULKAN
 
     fun resolvePrecision(requestedPrecision: Int, processingBackend: Int, model: Int, scale: Int): Int {
-        val precision = requestedPrecision.coerceIn(0, 3)
-        if (resolveProcessingBackend(processingBackend, model, scale) != PROCESSING_BACKEND_QUALCOMM_NPU) {
-            return precision
-        }
-        return if (isQualcommNpuModelSupported(model, scale) && precision == 2) 2 else 0
+        if (resolveProcessingBackend(processingBackend, model, scale) != PROCESSING_BACKEND_VULKAN) return 0
+        return requestedPrecision.takeIf { it == 0 || it == 1 || it == 3 } ?: 0
     }
 
-    private fun backendName(backend: Int): String {
-        return if (backend == PROCESSING_BACKEND_QUALCOMM_NPU) "Qualcomm NPU" else "Vulkan"
+    private fun backendName(backend: Int): String = when (backend) {
+        PROCESSING_BACKEND_QUALCOMM_NPU -> "Qualcomm NPU"
+        PROCESSING_BACKEND_MEDIATEK_NPU -> "MediaTek NPU"
+        else -> "Vulkan"
     }
 
     private fun initializeBackend(context: Context, backend: Int, modelName: String?, padding: Int): Boolean {
@@ -813,6 +812,7 @@ object Waifu2x {
                 PROCESSING_BACKEND_VULKAN -> true
                 PROCESSING_BACKEND_QUALCOMM_NPU ->
                     modelName != null && initializeQnnIfAvailable(context, modelName, padding)
+                PROCESSING_BACKEND_MEDIATEK_NPU -> modelName != null && MediaTekNpu.initialize(context, modelName)
                 else -> false
             }
         }.getOrDefault(false)
@@ -830,27 +830,8 @@ object Waifu2x {
         if (!isQualcommNpuAvailable()) return false
         if (isQnnActive()) return true
         return runCatching {
-            val htpArchitecture = QualcommHtp.architecture(context) ?: return@runCatching false
-            val filename = "$modelName.v$htpArchitecture.bin"
-            val directory = File(context.cacheDir, "qnn-contexts-v$htpArchitecture").apply { mkdirs() }
-            val output = File(directory, filename)
-            val version = File(directory, ".$filename.version")
-            if (!output.isFile || version.takeIf(File::isFile)?.readText() != QNN_CONTEXT_CACHE_VERSION) {
-                context.assets.open("qnn-contexts/$filename").use { input ->
-                    output.outputStream().use(input::copyTo)
-                }
-                version.writeText(QNN_CONTEXT_CACHE_VERSION)
-            }
-            val active = nativeInitQnn(
-                output.absolutePath,
-                context.applicationInfo.nativeLibraryDir,
-                padding,
-            )
-            android.util.Log.d(
-                "Waifu2x",
-                "Qualcomm NPU ${if (active) "enabled" else "unavailable"}: $filename (HTP v$htpArchitecture)",
-            )
-            active
+            val output = QnnModelContexts.prepare(context, modelName) ?: return false
+            nativeInitQnn(output.absolutePath, context.applicationInfo.nativeLibraryDir, padding)
         }.onFailure {
             android.util.Log.w("Waifu2x", "Unable to initialize Qualcomm NPU; enhancement skipped", it)
         }.getOrDefault(false)

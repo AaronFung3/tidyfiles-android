@@ -41,13 +41,10 @@ val ncnnSdkDir = providers.gradleProperty("ncnnSdkDir").orNull
 
 // Vendored QAIRT (QNN) headers for compiling the optional NPU backend; the runtime
 // libraries are provided by the com.qualcomm.qti:qnn-runtime Maven dependency.
-val qnnHeadersDir = rootProject.file("third_party/qnn-include")
-// KMK <--
-
 // KMK -->
-// QNN asset stripping for non-arm64 split APKs, enabled with `-Pexclude-qnn-assets`.
-// (logic lives in strip-qnn.gradle.kts to keep the main build file small)
-apply(from = "strip-qnn.gradle.kts")
+// Since 1.3.15 parity the NPU models ship as compact FP16 DLC/TFLite assets and are
+// compiled on the device, so the former -Pexclude-qnn-assets APK-stripping step is gone.
+val qnnHeadersDir = rootProject.file("third_party/qnn-include")
 // KMK <--
 
 android {
@@ -255,6 +252,12 @@ dependencies {
     implementation(projects.i18nKmk)
     // Qualcomm QNN runtime libraries (libQnnHtp.so, HTP stub/skel libs) for the NPU backend.
     implementation("com.qualcomm.qti:qnn-runtime:2.49.0")
+
+    // KMK -->
+    // LiteRT runtime + MediaTek NeuroPilot dispatch for the MediaTek NPU backend.
+    implementation("com.google.ai.edge.litert:litert:2.3.0")
+    implementation("com.google.ai.edge.litert:litert-npu-runtime-mediatek:2.3.0")
+    // KMK <--
     // KMK <--
     // SY -->
     implementation(projects.i18nSy)

@@ -17,6 +17,7 @@
 *.param binary
 *.so binary
 *.dlc binary
+*.tflite binary
 
 # Images
 *.webp binary

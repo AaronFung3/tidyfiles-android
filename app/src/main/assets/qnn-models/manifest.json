@@ -1,0 +1,17 @@
+{
+  "realesrgan-animevideov3-x2": "079db25ebd063105a77c7f868a73dea6ac69cf2ba56e3674477ce7667c8d5e3c",
+  "realesrgan-general-x4v3-x2": "5861a68ede2198e77ad27472b323ea1ee7585b31675bacf61ef93bbe746a864a",
+  "realcugan-se-x2-no-denoise": "67c78e07fad9ea1aac7e627fd24e8e57798dbf134ce933ffad870a08ae81a966",
+  "realcugan-se-x2-denoise1x": "852c7547fc1b229129ac290c38ec58fa7353a7356801b9ad240d08aebc86addf",
+  "realcugan-se-x2-denoise2x": "27526ffed2142c120a4276ffd18d1745157cbbf3c7468dcbcb62443906826bcd",
+  "realcugan-se-x2-denoise3x": "f2df663fc571f245bc4a7e6c05e4f1e620d4066e7d498d535e0722d7231f82de",
+  "realcugan-se-x2-conservative": "b2444a5a364712937f6c75439c8c2999bef7341f7c272ba958575120b7a851e2",
+  "realcugan-pro-x2-no-denoise": "703e24429c3150af84e1f35a1dbbb9372e3219de88595c07939cb6dd5e2a6bc6",
+  "realcugan-pro-x2-denoise3x": "73ae5097fbf821741500995b73a59bd104d0018ea532a95b71ffc2477f2c8407",
+  "realcugan-pro-x2-conservative": "ab9d1c5bba239f1f6dbb5683c7c5b716302736fa994e63cf2750245f6023812e",
+  "realcugan-pro-x3-no-denoise": "9a6dee0428c98f3018e1d123b1309fa8b3bb445a474833b2bd0ea1fd75ef34e6",
+  "realcugan-pro-x3-denoise3x": "c350e44e2b8fbd31ed56515be14b970101475869a6375b8008b2b205dfbe2147",
+  "realcugan-pro-x3-conservative": "6c02165a6b62cf11c29b49d8408ca73e9f8da77dc5788bd46a3842f904b64b90",
+  "span-nomosuni-x2": "0f63b960b02bf8d8a457e792393bb479ef397aed019c99eb068fc3707f74fc96",
+  "w2xex-photo-small-x2": "8d7c6e9edf6114a42c2b9d952ea4794494c88ca2c6f71ac6c11ee2ec966a1fe4"
+}

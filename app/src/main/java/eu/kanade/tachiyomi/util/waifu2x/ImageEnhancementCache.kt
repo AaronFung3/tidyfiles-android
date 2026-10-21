@@ -27,8 +27,6 @@ import kotlin.concurrent.write
  */
 object ImageEnhancementCache {
     private const val CACHE_DIR_NAME = "realcugan_cache"
-    private const val PHOTO_NPU_INT8_CACHE_REVISION = 4
-    private const val REAL_CUGAN_NPU_INT8_CACHE_REVISION = 1
 
     // KMK -->
     // Input decoding now preserves source resolution before enhancement.
@@ -575,21 +573,10 @@ object ImageEnhancementCache {
         val resolvedPrecision = Waifu2x.resolvePrecision(precision, resolvedBackend, model, effectiveScale)
         val modelRevision = buildString {
             if (resolvedBackend == Waifu2x.PROCESSING_BACKEND_QUALCOMM_NPU) {
-                append("_qv${Waifu2x.QNN_CONTEXT_CACHE_VERSION}")
+                append("_qv${Waifu2x.QNN_CONTEXT_CACHE_VERSION}_nf1")
             }
-            if (
-                model == Waifu2x.MODEL_REAL_ESRGAN_ANIME &&
-                realEsrganStyle == Waifu2x.REAL_ESRGAN_STYLE_PHOTO &&
-                resolvedPrecision == 2 &&
-                resolvedBackend == Waifu2x.PROCESSING_BACKEND_QUALCOMM_NPU
-            ) {
-                append("_mv$PHOTO_NPU_INT8_CACHE_REVISION")
-            } else if (
-                (model == 0 || model == 1) &&
-                resolvedPrecision == 2 &&
-                resolvedBackend == Waifu2x.PROCESSING_BACKEND_QUALCOMM_NPU
-            ) {
-                append("_cv$REAL_CUGAN_NPU_INT8_CACHE_REVISION")
+            if (resolvedBackend == Waifu2x.PROCESSING_BACKEND_MEDIATEK_NPU) {
+                append("_mtv${eu.kanade.tachiyomi.util.mediatek.MediaTekNpu.CACHE_VERSION}")
             }
 
             // KMK -->
