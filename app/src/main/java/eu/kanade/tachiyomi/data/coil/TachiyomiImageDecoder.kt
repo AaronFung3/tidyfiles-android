@@ -190,20 +190,7 @@ class TachiyomiImageDecoder(private val resources: ImageSource, private val opti
                         if (mangaId != -1L && chapterId != -1L && pageIndex != -1) {
                             ImageEnhancementCache.init(context)
 
-                            val configHash = ImageEnhancementCache.getConfigHash(
-                                noise = preferences.realCuganNoiseLevel().get(),
-                                scale = preferences.realCuganScale().get(),
-                                model = preferences.realCuganModel().get(),
-                                realEsrganStyle = preferences.realEsrganStyle().get(),
-                                maxWidth = preferences.realCuganMaxSizeWidth().get(),
-                                maxHeight = preferences.realCuganMaxSizeHeight().get(),
-                                skipMaxWidth = preferences.realCuganSkipMaxSizeWidth().get(),
-                                skipMaxHeight = preferences.realCuganSkipMaxSizeHeight().get(),
-                                tileSize = preferences.realCuganTileSize().get(),
-                                precision = preferences.realCuganPrecision().get(),
-                                fp16Arithmetic = preferences.realCuganFp16Arithmetic().get(),
-                                processingBackend = preferences.realCuganProcessingBackend().get(),
-                            )
+                            val configHash = ImageEnhancementCache.getConfigHash(preferences)
 
                             // Check cache first
                             var usedCache = false
@@ -483,20 +470,7 @@ class TachiyomiImageDecoder(private val resources: ImageSource, private val opti
         if (!preferences.realCuganEnabled().get()) return null
 
         ImageEnhancementCache.init(context)
-        val configHash = ImageEnhancementCache.getConfigHash(
-            noise = preferences.realCuganNoiseLevel().get(),
-            scale = preferences.realCuganScale().get(),
-            model = preferences.realCuganModel().get(),
-            realEsrganStyle = preferences.realEsrganStyle().get(),
-            maxWidth = preferences.realCuganMaxSizeWidth().get(),
-            maxHeight = preferences.realCuganMaxSizeHeight().get(),
-            skipMaxWidth = preferences.realCuganSkipMaxSizeWidth().get(),
-            skipMaxHeight = preferences.realCuganSkipMaxSizeHeight().get(),
-            tileSize = preferences.realCuganTileSize().get(),
-            precision = preferences.realCuganPrecision().get(),
-            fp16Arithmetic = preferences.realCuganFp16Arithmetic().get(),
-            processingBackend = preferences.realCuganProcessingBackend().get(),
-        )
+        val configHash = ImageEnhancementCache.getConfigHash(preferences)
         val cachedFile = ImageEnhancementCache.getCachedImage(
             mangaId,
             chapterId,

@@ -250,20 +250,7 @@ internal class HttpPageLoader(
                 val chapterId = page.chapter.chapter.id ?: -1L
 
                 if (mangaId != -1L && chapterId != -1L) {
-                    val configHash = ImageEnhancementCache.getConfigHash(
-                        noise = readerPreferences.realCuganNoiseLevel().get(),
-                        scale = readerPreferences.realCuganScale().get(),
-                        model = readerPreferences.realCuganModel().get(),
-                        realEsrganStyle = readerPreferences.realEsrganStyle().get(),
-                        maxWidth = readerPreferences.realCuganMaxSizeWidth().get(),
-                        maxHeight = readerPreferences.realCuganMaxSizeHeight().get(),
-                        skipMaxWidth = readerPreferences.realCuganSkipMaxSizeWidth().get(),
-                        skipMaxHeight = readerPreferences.realCuganSkipMaxSizeHeight().get(),
-                        tileSize = readerPreferences.realCuganTileSize().get(),
-                        precision = readerPreferences.realCuganPrecision().get(),
-                        fp16Arithmetic = readerPreferences.realCuganFp16Arithmetic().get(),
-                        processingBackend = readerPreferences.realCuganProcessingBackend().get(),
-                    )
+                    val configHash = ImageEnhancementCache.getConfigHash(readerPreferences)
                     val cachedFile = ImageEnhancementCache.getCachedImage(
                         mangaId,
                         chapterId,

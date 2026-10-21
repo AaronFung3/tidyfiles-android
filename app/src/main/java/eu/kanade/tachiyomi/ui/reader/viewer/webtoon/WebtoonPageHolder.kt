@@ -264,20 +264,7 @@ class WebtoonPageHolder(
         val mangaId = viewer.activity.viewModel.manga?.id ?: return null
         val chapterId = targetPage.chapter.chapter.id ?: return null
         ImageEnhancementCache.init(frame.context)
-        val configHash = ImageEnhancementCache.getConfigHash(
-            noise = readerPreferences.realCuganNoiseLevel().get(),
-            scale = readerPreferences.realCuganScale().get(),
-            model = readerPreferences.realCuganModel().get(),
-            realEsrganStyle = readerPreferences.realEsrganStyle().get(),
-            maxWidth = readerPreferences.realCuganMaxSizeWidth().get(),
-            maxHeight = readerPreferences.realCuganMaxSizeHeight().get(),
-            skipMaxWidth = readerPreferences.realCuganSkipMaxSizeWidth().get(),
-            skipMaxHeight = readerPreferences.realCuganSkipMaxSizeHeight().get(),
-            tileSize = readerPreferences.realCuganTileSize().get(),
-            precision = readerPreferences.realCuganPrecision().get(),
-            fp16Arithmetic = readerPreferences.realCuganFp16Arithmetic().get(),
-            processingBackend = readerPreferences.realCuganProcessingBackend().get(),
-        )
+        val configHash = ImageEnhancementCache.getConfigHash(readerPreferences)
         return ImageEnhancementCache.getCachedImage(mangaId, chapterId, targetPage.index, configHash, targetPage.enhancementKeySuffix)
     }
     // KMK <--

@@ -4,7 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Build
-import kotlinx.coroutines.CancellationException
+import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -48,7 +48,7 @@ object ImageEnhancementCache {
     // KMK <--
     private var lastTrimTime = 0L
     private val cacheGeneration = AtomicInteger(0)
-    private val pendingSaveKeys = ConcurrentHashMap<String, Int>()
+    private val pendingSaveKeys = ConcurrentHashMap<CacheKey, SaveRequest>()
 
     // KMK -->
     // Encoding a 2x enhanced page (WebP q90, tens of MB of ARGB_8888) takes
@@ -57,7 +57,7 @@ object ImageEnhancementCache {
     // steady-state throughput by T_encode/(T_infer + T_encode). The writer below
     // lives on its own dispatcher so both stages overlap: one slot of buffering
     // plus one in-flight encode keeps at most two enhanced copies alive.
-    private val saveQueue = Channel<SaveRequest>(capacity = 1)
+    private val saveQueue = Channel<SaveRequest>(capacity = 1, onUndeliveredElement = ::releaseSaveRequest)
     private val saveDispatcher = Dispatchers.IO.limitedParallelism(1)
     private val saveScope = CoroutineScope(saveDispatcher + SupervisorJob())
 
@@ -65,7 +65,7 @@ object ImageEnhancementCache {
         saveScope.launch {
             for (request in saveQueue) {
                 try {
-                    if (request.generation == cacheGeneration.get()) {
+                    if (isCurrentSave(request)) {
                         writeToCache(request)?.let { file ->
                             _events.tryEmit(CacheEvent.Saved(request.cacheKey))
                             android.util.Log.d(
@@ -81,10 +81,7 @@ object ImageEnhancementCache {
                         t,
                     )
                 } finally {
-                    pendingSaveKeys.remove(request.key, request.generation)
-                    if (!request.bitmap.isRecycled) {
-                        request.bitmap.recycle()
-                    }
+                    releaseSaveRequest(request)
                 }
             }
         }
@@ -99,7 +96,7 @@ object ImageEnhancementCache {
         val bitmap: Bitmap,
         val pageVariant: String,
         val generation: Int,
-        val key: String,
+        val cacheKey: CacheKey,
     )
 
     // KMK -->
@@ -273,6 +270,7 @@ object ImageEnhancementCache {
         // KMK -->
         return cacheLock.write {
             try {
+                pendingSaveKeys.remove(cacheKey(mangaId, chapterId, pageIndex, configHash, pageVariant))
                 val file = File(getChapterDir(mangaId, chapterId), getFilename(pageIndex, configHash, pageVariant))
                 val tempFile = File(file.parent, "${file.name}.tmp")
                 val removedFile = !file.exists() || file.delete()
@@ -328,12 +326,6 @@ object ImageEnhancementCache {
             if (!bitmap.isRecycled) bitmap.recycle()
             return false
         }
-        val key = pendingSaveKey(mangaId, chapterId, pageIndex, pageVariant)
-        val generation = cacheGeneration.get()
-        if (pendingSaveKeys.putIfAbsent(key, generation) != null) {
-            if (!bitmap.isRecycled) bitmap.recycle()
-            return false
-        }
         val request = SaveRequest(
             mangaId = mangaId,
             chapterId = chapterId,
@@ -341,32 +333,43 @@ object ImageEnhancementCache {
             configHash = configHash,
             bitmap = bitmap,
             pageVariant = pageVariant,
-            generation = generation,
-            key = key,
+            generation = cacheGeneration.get(),
+            cacheKey = cacheKey(mangaId, chapterId, pageIndex, configHash, pageVariant),
         )
-        return try {
-            saveQueue.send(request)
-            true
-        } catch (e: CancellationException) {
-            pendingSaveKeys.remove(key, generation)
+        if (pendingSaveKeys.putIfAbsent(request.cacheKey, request) != null) {
             if (!bitmap.isRecycled) bitmap.recycle()
-            throw e
-        } catch (t: Throwable) {
-            pendingSaveKeys.remove(key, generation)
-            if (!bitmap.isRecycled) bitmap.recycle()
-            false
+            return false
         }
+        // Channel owns cleanup once send starts. Prompt cancellation can throw
+        // even after delivery; recycling in a catch would race the cache writer.
+        saveQueue.send(request)
+        return true
     }
     // KMK <--
 
-    fun isSavePending(mangaId: Long, chapterId: Long, pageIndex: Int, pageVariant: String = ""): Boolean {
-        return pendingSaveKeys.containsKey(pendingSaveKey(mangaId, chapterId, pageIndex, pageVariant))
+    fun isSavePending(mangaId: Long, chapterId: Long, pageIndex: Int, pageVariant: String = "", configHash: String? = null): Boolean {
+        return if (configHash != null) {
+            pendingSaveKeys.containsKey(cacheKey(mangaId, chapterId, pageIndex, configHash, pageVariant))
+        } else {
+            pendingSaveKeys.keys.any {
+                it.mangaId == mangaId && it.chapterId == chapterId && it.pageIndex == pageIndex &&
+                    it.pageVariant == pageVariant
+            }
+        }
+    }
+
+    private fun isCurrentSave(request: SaveRequest): Boolean =
+        request.generation == cacheGeneration.get() && pendingSaveKeys[request.cacheKey] === request
+
+    private fun releaseSaveRequest(request: SaveRequest) {
+        pendingSaveKeys.remove(request.cacheKey, request)
+        if (!request.bitmap.isRecycled) request.bitmap.recycle()
     }
 
     private fun writeToCache(request: SaveRequest): File? {
         return cacheLock.read {
             // clear() may have run after this request was dequeued.
-            if (request.generation != cacheGeneration.get() || cacheDir == null) {
+            if (!isCurrentSave(request) || cacheDir == null) {
                 return@read null
             }
             val bitmap = request.bitmap
@@ -468,27 +471,33 @@ object ImageEnhancementCache {
      * Clear old cache files including skip markers
      */
     fun clearOldCache(mangaId: Long, chapterId: Long, currentPage: Int, keepRange: Int = 5) {
-        var removedAny = false
-        getChapterDir(mangaId, chapterId).listFiles()?.forEach { file ->
-            try {
-                // filename format: pageIndex_configHash.webp
-                val name = file.name
-                val parts = name.split("_")
-                if (parts.isNotEmpty()) {
-                    val pageIndex = parts[0].toIntOrNull()
-                    if (pageIndex != null) {
-                        // Delete if page is too far behind or ahead
-                        if (kotlin.math.abs(pageIndex - currentPage) > keepRange) {
-                            removedAny = file.delete() || removedAny
+        cacheLock.write {
+            pendingSaveKeys.keys.removeIf {
+                it.mangaId == mangaId && it.chapterId == chapterId &&
+                    kotlin.math.abs(it.pageIndex - currentPage) > keepRange
+            }
+            var removedAny = false
+            getChapterDir(mangaId, chapterId).listFiles()?.forEach { file ->
+                try {
+                    // filename format: pageIndex_configHash.webp
+                    val name = file.name
+                    val parts = name.split("_")
+                    if (parts.isNotEmpty()) {
+                        val pageIndex = parts[0].toIntOrNull()
+                        if (pageIndex != null) {
+                            // Delete if page is too far behind or ahead
+                            if (kotlin.math.abs(pageIndex - currentPage) > keepRange) {
+                                removedAny = file.delete() || removedAny
+                            }
                         }
                     }
+                } catch (e: Exception) {
+                    // Ignore errors
                 }
-            } catch (e: Exception) {
-                // Ignore errors
             }
-        }
-        if (removedAny) {
-            _events.tryEmit(CacheEvent.Cleared)
+            if (removedAny) {
+                _events.tryEmit(CacheEvent.Cleared)
+            }
         }
     }
 
@@ -507,9 +516,6 @@ object ImageEnhancementCache {
     }
 
     // KMK -->
-    private val SaveRequest.cacheKey: CacheKey
-        get() = cacheKey(mangaId, chapterId, pageIndex, configHash, pageVariant)
-
     private fun cacheKey(
         mangaId: Long,
         chapterId: Long,
@@ -518,10 +524,6 @@ object ImageEnhancementCache {
         pageVariant: String,
     ) = CacheKey(mangaId, chapterId, pageIndex, configHash, pageVariant)
     // KMK <--
-
-    private fun pendingSaveKey(mangaId: Long, chapterId: Long, pageIndex: Int, pageVariant: String): String {
-        return "${mangaId}_${chapterId}_${pageIndex}_$pageVariant"
-    }
 
     private fun getFilename(pageIndex: Int, configHash: String, pageVariant: String = ""): String {
         return buildString {
@@ -539,6 +541,21 @@ object ImageEnhancementCache {
     /**
      * Generate a unique hash string based on current settings
      */
+    fun getConfigHash(preferences: ReaderPreferences): String = getConfigHash(
+        noise = preferences.realCuganNoiseLevel().get(),
+        scale = preferences.realCuganScale().get(),
+        model = preferences.realCuganModel().get(),
+        realEsrganStyle = preferences.realEsrganStyle().get(),
+        maxWidth = preferences.realCuganMaxSizeWidth().get(),
+        maxHeight = preferences.realCuganMaxSizeHeight().get(),
+        skipMaxWidth = preferences.realCuganSkipMaxSizeWidth().get(),
+        skipMaxHeight = preferences.realCuganSkipMaxSizeHeight().get(),
+        tileSize = preferences.realCuganTileSize().get(),
+        precision = preferences.realCuganPrecision().get(),
+        fp16Arithmetic = preferences.realCuganFp16Arithmetic().get(),
+        processingBackend = preferences.realCuganProcessingBackend().get(),
+    )
+
     fun getConfigHash(
         noise: Int,
         scale: Int,
@@ -603,15 +620,19 @@ object ImageEnhancementCache {
      * Clear all cache files for a specific chapter
      */
     fun clearChapterCache(mangaId: Long, chapterId: Long) {
-        try {
-            val chapterDir = getChapterDir(mangaId, chapterId)
-            if (chapterDir.exists()) {
-                chapterDir.deleteRecursively()
-                android.util.Log.d("ImageEnhancementCache", "Cleared cache for manga $mangaId, chapter $chapterId")
+        cacheLock.write {
+            try {
+                pendingSaveKeys.keys.removeIf { it.mangaId == mangaId && it.chapterId == chapterId }
+                val chapterDir = getChapterDir(mangaId, chapterId)
+                if (chapterDir.exists()) {
+                    chapterDir.deleteRecursively()
+                    android.util.Log.d("ImageEnhancementCache", "Cleared cache for manga $mangaId, chapter $chapterId")
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("ImageEnhancementCache", "Failed to clear chapter cache", e)
             }
-        } catch (e: Exception) {
-            android.util.Log.e("ImageEnhancementCache", "Failed to clear chapter cache", e)
         }
+        _events.tryEmit(CacheEvent.Cleared)
     }
 
     /**
@@ -619,35 +640,37 @@ object ImageEnhancementCache {
      * Should be called from background thread
      */
     fun checkAndTrim(context: Context) {
-        // Debounce: only check once every 10 minutes
-        if (System.currentTimeMillis() - lastTrimTime < 10 * 60 * 1000) return
-        lastTrimTime = System.currentTimeMillis()
-
         init(context)
-        val dir = cacheDir ?: return
+        cacheLock.write {
+            // Debounce: only check once every 10 minutes
+            if (System.currentTimeMillis() - lastTrimTime < 10 * 60 * 1000) return@write
+            lastTrimTime = System.currentTimeMillis()
 
-        try {
-            var size = dir.walkTopDown().filter { it.isFile }.map { it.length() }.sum()
-            if (size > MAX_CACHE_SIZE) {
-                android.util.Log.d("ImageEnhancementCache", "Cache size ${size / 1024 / 1024}MB > 3GB, trimming...")
+            val dir = cacheDir ?: return@write
 
-                // Get all files sorted by last modified (oldest first)
-                val files = dir.walkTopDown()
-                    .filter { it.isFile }
-                    .sortedBy { it.lastModified() }
-                    .iterator()
+            try {
+                var size = dir.walkTopDown().filter { it.isFile }.map { it.length() }.sum()
+                if (size > MAX_CACHE_SIZE) {
+                    android.util.Log.d("ImageEnhancementCache", "Cache size ${size / 1024 / 1024}MB > 3GB, trimming...")
 
-                while (files.hasNext() && size > MAX_CACHE_SIZE * 0.9) { // Trim to 90%
-                    val file = files.next()
-                    val len = file.length()
-                    if (file.delete()) {
-                        size -= len
+                    // Get all files sorted by last modified (oldest first)
+                    val files = dir.walkTopDown()
+                        .filter { it.isFile }
+                        .sortedBy { it.lastModified() }
+                        .iterator()
+
+                    while (files.hasNext() && size > MAX_CACHE_SIZE * 0.9) { // Trim to 90%
+                        val file = files.next()
+                        val len = file.length()
+                        if (file.delete()) {
+                            size -= len
+                        }
                     }
+                    android.util.Log.d("ImageEnhancementCache", "Trim complete, new size: ${size / 1024 / 1024}MB")
                 }
-                android.util.Log.d("ImageEnhancementCache", "Trim complete, new size: ${size / 1024 / 1024}MB")
+            } catch (e: Exception) {
+                android.util.Log.e("ImageEnhancementCache", "Failed to trim cache", e)
             }
-        } catch (e: Exception) {
-            android.util.Log.e("ImageEnhancementCache", "Failed to trim cache", e)
         }
     }
 }

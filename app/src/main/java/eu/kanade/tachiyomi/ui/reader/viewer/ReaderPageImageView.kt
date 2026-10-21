@@ -968,20 +968,7 @@ open class ReaderPageImageView @JvmOverloads constructor(
     }
 
     private fun enhancementConfigHash(): String {
-        return ImageEnhancementCache.getConfigHash(
-            noise = realCuganNoiseLevel,
-            scale = realCuganScale,
-            model = realCuganModel,
-            realEsrganStyle = preferences.realEsrganStyle().get(),
-            maxWidth = realCuganMaxSizeWidth,
-            maxHeight = realCuganMaxSizeHeight,
-            skipMaxWidth = realCuganSkipMaxSizeWidth,
-            skipMaxHeight = realCuganSkipMaxSizeHeight,
-            tileSize = tileSize,
-            precision = preferences.realCuganPrecision().get(),
-            fp16Arithmetic = preferences.realCuganFp16Arithmetic().get(),
-            processingBackend = preferences.realCuganProcessingBackend().get(),
-        )
+        return ImageEnhancementCache.getConfigHash(preferences)
     }
 
     private fun secondaryCachedFile(mangaId: Long, configHash: String): java.io.File? {
@@ -1084,20 +1071,7 @@ open class ReaderPageImageView @JvmOverloads constructor(
         if (pIdx < 0 || mId == -1L || cId == -1L) return
 
         ImageEnhancementCache.init(context)
-        val configHash = ImageEnhancementCache.getConfigHash(
-            noise = realCuganNoiseLevel,
-            scale = realCuganScale,
-            model = realCuganModel,
-            realEsrganStyle = preferences.realEsrganStyle().get(),
-            maxWidth = realCuganMaxSizeWidth,
-            maxHeight = realCuganMaxSizeHeight,
-            skipMaxWidth = realCuganSkipMaxSizeWidth,
-            skipMaxHeight = realCuganSkipMaxSizeHeight,
-            tileSize = tileSize,
-            precision = preferences.realCuganPrecision().get(),
-            fp16Arithmetic = preferences.realCuganFp16Arithmetic().get(),
-            processingBackend = preferences.realCuganProcessingBackend().get(),
-        )
+        val configHash = ImageEnhancementCache.getConfigHash(preferences)
         val pageVariant = enhancementVariant()
 
         if (ImageEnhancementCache.getCachedImage(mId, cId, pIdx, configHash, pageVariant) != null) return
