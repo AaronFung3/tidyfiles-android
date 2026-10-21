@@ -1,7 +1,9 @@
 # Komikku_img_upscale
 
+English | [简体中文](README.zh-CN.md) (image enhancement only)
+
 ### Description
-A high-performance Komikku fork featuring integrated AI upscaling (Real-CUGAN, Real-ESRGAN, Waifu2x and more) with Vulkan and Qualcomm NPU processing to enhance low-resolution manga in real time.
+A high-performance Komikku fork featuring integrated AI upscaling (Real-CUGAN, Real-ESRGAN, Waifu2x and more) with Vulkan and Qualcomm / MediaTek NPU processing to enhance low-resolution manga in real time.
 
 <p align="center">
   <img width="350" alt="Komikku AI Upscale Preview" src="./.github/readme-images/upscale-preview.png">
@@ -28,12 +30,17 @@ A high-performance Komikku fork featuring integrated AI upscaling (Real-CUGAN, R
 | **sudo UltraCompact** | 2x | sudo rm -rf / --no-preserve-root#8353 | [OpenModelDB](https://openmodeldb.info/models/2x-sudo-UltraCompact) |
 | **SPAN NomosUni Photo** | 2x | Philip Hofmann | [OpenModelDB](https://openmodeldb.info/models/2x-NomosUni-span-multijpg-ldl) |
 
-## Qualcomm NPU Acceleration
+## NPU Acceleration
 
-An optional Qualcomm QNN/HTP backend sits alongside the Vulkan backend. Vulkan and NPU are
-independent choices in the reader settings. Selecting NPU limits the model list to models with
-compatible offline contexts; unsupported devices keep the NPU option disabled and continue to
-use Vulkan.
+An optional NPU backend sits alongside the Vulkan backend. Vulkan and NPU are independent
+choices in the reader settings. Selecting an NPU limits the model list to models with packaged
+NPU assets; unsupported devices keep that option disabled and continue to use Vulkan.
+
+| Backend | Details |
+| :--- | :--- |
+| **Vulkan GPU** | Full model list below, with FP16, FP32 or BF16 precision |
+| **Qualcomm NPU** | Runs FP16 models through QNN / HTP; the packaged runtime covers HTP v69, v73, v75, v79 and v81 |
+| **MediaTek NPU** | Runs FP16 models through LiteRT / NeuroPilot on ARM64 MediaTek devices with Android 12 or newer |
 
 | Snapdragon platform | SoC | HTP architecture |
 | :--- | :---: | :---: |
@@ -45,22 +52,28 @@ use Vulkan.
 
 ### NPU Model Support
 
-| Model | Scale | Precision | Variants |
-| :--- | :---: | :---: | :--- |
-| Real-ESRGAN animevideov3 | 2x | FP16 / INT8 | Standard |
-| Real-ESRGAN general-x4v3 (Photo) | 2x | FP16 / W8A16 | Standard |
-| Real-CUGAN SE | 2x | FP16 / W8A16 | No denoise, denoise1x, denoise2x, denoise3x, conservative |
-| Real-CUGAN Pro | 2x / 3x | FP16 / W8A16 | No denoise, denoise3x, conservative |
-| W2xEX Photo Small | 2x | FP16 / W8A16 | Standard |
-| SPAN NomosUni Photo | 2x | FP16 / W8A16 | Standard |
+Both NPU backends use the same 15 FP16 model variants:
+
+| Model | Scale | Variants |
+| :--- | :---: | :--- |
+| Real-ESRGAN animevideov3 | 2x | Standard |
+| Real-ESRGAN general-x4v3 (Photo) | 2x | Standard |
+| Real-CUGAN SE | 2x | No denoise, denoise1x, denoise2x, denoise3x, conservative |
+| Real-CUGAN Pro | 2x / 3x | No denoise, denoise3x, conservative |
+| W2xEX Photo Small | 2x | Standard |
+| SPAN NomosUni Photo | 2x | Standard |
 
 Actual speed depends on image dimensions, model variant, thermal state, and device firmware.
 
-The QNN context binaries for all supported Snapdragon targets are bundled in the app, and the
-matching HTP Stub/Skel runtime libraries come from Qualcomm's official Maven artifact
-(`com.qualcomm.qti:qnn-runtime`). No Qualcomm SDK is required to build this project. See
-[docs/upscale-port-review.md](./docs/upscale-port-review.md) for port details and build
-configuration.
+The NPU models ship as compact FP16 DLC / TFLite assets and are compiled on the device on first
+use. Settings show preparation progress and offer a retry after failure; prepared models persist
+in app-private storage across restarts and survive clearing the enhanced-image cache. Selecting
+an NPU backend never falls back to CPU or Vulkan on failure - pick Vulkan explicitly to use the
+GPU. The MediaTek path has not been verified on MediaTek hardware yet, so availability depends on
+the device and its system drivers. The matching HTP Stub/Skel runtime libraries come from
+Qualcomm's official Maven artifact (`com.qualcomm.qti:qnn-runtime`), so no Qualcomm SDK is needed
+to build this project. See [docs/upscale-port-review.md](./docs/upscale-port-review.md) for port
+details and build configuration.
 
 ## Acknowledgements
 
