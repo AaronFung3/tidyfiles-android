@@ -140,9 +140,24 @@ class PagerConfig(
 
         readerPreferences.dualPageSplitPaged()
             .register(
-                { dualPageSplit = it },
+                {
+                    dualPageSplit = it
+                    // KMK --> keep the split/merged-pages exclusivity symmetric: the
+                    // initial value above and the page-layout listener both disable
+                    // merged double pages while the split is on, but flipping the
+                    // toggle at runtime left doublePages stale, so holders kept a
+                    // sibling page whose image is never rendered.
+                    if (!autoDoublePages) {
+                        doublePages = readerPreferences.pageLayout().get() == PageLayout.DOUBLE_PAGES && !it
+                    }
+                    // KMK <--
+                },
                 {
                     imagePropertyChangedListener?.invoke()
+                    // The chapter reload for a pairing flip is owned by ReaderActivity's own
+                    // dualPageSplitPaged collector; recomputing doublePages here would run
+                    // after the value assignment above, so a comparison against the previous
+                    // value is always false and must not be reintroduced.
                     dualPageSplitChangedListener?.invoke(it)
                 },
             )
