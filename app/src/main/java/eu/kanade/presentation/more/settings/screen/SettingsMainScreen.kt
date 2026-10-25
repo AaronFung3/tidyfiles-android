@@ -201,6 +201,14 @@ object SettingsMainScreen : Screen() {
             icon = Icons.AutoMirrored.Outlined.ChromeReaderMode,
             screen = SettingsReaderScreen,
         ),
+        // tidyFiles -->
+        Item(
+            titleRes = MR.strings.tidyfiles_settings_title,
+            subtitleRes = MR.strings.tidyfiles_settings_subtitle,
+            icon = Icons.Outlined.Link,
+            screen = SettingsTidyFilesScreen(),
+        ),
+        // tidyFiles <--
         Item(
             titleRes = MR.strings.pref_category_downloads,
             subtitleRes = MR.strings.pref_downloads_summary,

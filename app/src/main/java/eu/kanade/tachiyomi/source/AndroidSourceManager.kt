@@ -14,6 +14,7 @@ import eu.kanade.tachiyomi.source.online.all.MergedSource
 import eu.kanade.tachiyomi.source.online.all.NHentai
 import eu.kanade.tachiyomi.source.online.all.Pururin
 import eu.kanade.tachiyomi.source.online.english.EightMuses
+import eu.kanade.tachiyomi.source.tidyfiles.TidyFilesSource
 import exh.log.xLogD
 import exh.source.BlacklistedSources
 import exh.source.DelegatedHttpSource
@@ -98,6 +99,9 @@ class AndroidSourceManager(
                                 sourcePreferences.allowLocalSourceHiddenFolders()::get,
                                 // SY <--
                             ),
+                            // tidyFiles -->
+                            TidyFilesSource.ID to TidyFilesSource(sourcePreferences),
+                            // tidyFiles <--
                         ),
                     ).apply {
                         // KMK -->

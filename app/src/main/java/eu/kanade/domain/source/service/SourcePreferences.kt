@@ -145,6 +145,12 @@ class SourcePreferences(
     // KMK -->
     fun relatedMangas() = preferenceStore.getBoolean("related_mangas", true)
 
+    // tidyFiles -->
+    fun tidyFilesUrl() = preferenceStore.getString("tidyfiles_url", "http://127.0.0.1:8765")
+
+    fun tidyFilesToken() = preferenceStore.getString("tidyfiles_token", "")
+    // tidyFiles <--
+
     companion object {
         const val PINNED_SOURCES_PREF_KEY = "pinned_catalogues"
     }

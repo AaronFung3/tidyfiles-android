@@ -102,7 +102,7 @@ val GITHUB_REPO: String by lazy { getGithubRepo() }
  * `Viel Builder` workflow (`.github/workflows/build_viel.yml`) of this fork.
  * Keep in sync with the repository the workflow runs in.
  */
-const val VIEL_REPO = "Viel0320/komikku_img_upscale"
+const val VIEL_REPO = "AaronFung3/tidyfiles-android"
 
 fun getGithubRepo(peekIntoPreview: Boolean = false): String =
     when {

@@ -51,7 +51,7 @@ android {
     namespace = "eu.kanade.tachiyomi"
 
     defaultConfig {
-        applicationId = "app.komikku"
+        applicationId = "app.tidyfiles"
 
         versionCode = 82
         versionName = "1.14.1"
@@ -128,8 +128,6 @@ android {
         // installed side by side.
         create("viel") {
             initWith(getByName("preview"))
-
-            applicationIdSuffix = ".viel"
         }
         // KMK <--
         create("benchmark") {

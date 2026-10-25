@@ -1045,4 +1045,9 @@
     <string name="migrationListScreen.migrateDialog.cancelLabel">Cancel</string>
     <string name="migrationListScreen.progressDialog.cancelLabel">Cancel</string>
     <string name="migrationListScreen.matchWithoutChapterToast">No chapters found, this entry cannot be used for migration</string>
+    <string name="tidyfiles_settings_title">tidyFiles 連線</string>
+    <string name="tidyfiles_settings_subtitle">PC 書庫地址同 token</string>
+    <string name="tidyfiles_settings_url_label">伺服器地址</string>
+    <string name="tidyfiles_settings_token_label">存取 token</string>
+    <string name="tidyfiles_settings_hint">同一個 Wi-Fi 就打 http://192.168.50.163:8765；街外用 Tailscale 地址。Token 同 PC 跑 app.py 時嘅 --token 一樣。</string>
 </resources>
