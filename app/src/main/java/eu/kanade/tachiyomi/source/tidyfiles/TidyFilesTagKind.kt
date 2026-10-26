@@ -30,22 +30,21 @@ object TidyFilesTagKind {
         }
     }
 
-    /** 一本書喺呢個分類入面有咩值（`genre` 係 `", "` 分隔嘅字串）。 */
-    fun valuesOf(genre: String?, kind: String): List<String> {
-        val g = genre ?: return emptyList()
+    /** 一本書喺呢個分類入面有咩值。 */
+    fun valuesOf(genres: List<String>?, kind: String): List<String> {
+        val list = genres ?: return emptyList()
         val prefix = if (kind == OTHER) null else "$kind$SEP"
-        return g.split(", ")
-            .mapNotNull { raw ->
-                val t = raw.trim()
-                when {
-                    prefix == null -> t.takeIf { it.isNotEmpty() && SEP !in it }
-                    t.startsWith(prefix) -> t.removePrefix(prefix).trim().takeIf { it.isNotEmpty() }
-                    else -> null
-                }
+        return list.mapNotNull { raw ->
+            val t = raw.trim()
+            when {
+                prefix == null -> t.takeIf { it.isNotEmpty() && SEP !in it }
+                t.startsWith(prefix) -> t.removePrefix(prefix).trim().takeIf { it.isNotEmpty() }
+                else -> null
             }
+        }
     }
 
     /** 呢本書喺呢個分類入面有冇 `value`。 */
-    fun matches(genre: String?, kind: String, value: String): Boolean =
-        valuesOf(genre, kind).any { it == value }
+    fun matches(genres: List<String>?, kind: String, value: String): Boolean =
+        valuesOf(genres, kind).any { it == value }
 }
