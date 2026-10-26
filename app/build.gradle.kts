@@ -157,9 +157,11 @@ android {
     splits {
         abi {
             isEnable = true
-            isUniversalApk = true
+            // tidyFiles --> 只有 arm64-v8a 用得着（手機 app，唔出模擬器／舊機 ABI）
+            isUniversalApk = false
             reset()
-            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            include("arm64-v8a")
+            // tidyFiles <--
         }
     }
 

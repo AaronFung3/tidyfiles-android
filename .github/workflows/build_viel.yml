@@ -181,7 +181,8 @@ jobs:
           tag='${{ needs.prepare-build.outputs.TAG_NAME }}'
           apk_dir='app/build/outputs/apk/viel'
 
-          for abi in universal arm64-v8a armeabi-v7a x86 x86_64; do
+          # tidyFiles: 只出 arm64-v8a（要同 app/build.gradle.kts 嘅 splits 一致）
+          for abi in arm64-v8a; do
             src=''
             for candidate in "${apk_dir}/app-${abi}-viel-signed.apk" "${apk_dir}/app-${abi}-viel.apk"; do
               if [ -f "${candidate}" ]; then

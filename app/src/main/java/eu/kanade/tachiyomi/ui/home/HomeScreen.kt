@@ -78,13 +78,13 @@ object HomeScreen : Screen() {
     @Suppress("ConstPropertyName")
     private const val TabNavigatorKey = "HomeTabs"
 
+    // tidyFiles --> 只有三個 tab：書架、瀏覽來源、更多（更新／歷史已移除）
     private val TABS = listOf(
         LibraryTab,
-        UpdatesTab,
-        HistoryTab,
         BrowseTab,
         MoreTab,
     )
+    // tidyFiles <--
 
     @Composable
     override fun Content() {
