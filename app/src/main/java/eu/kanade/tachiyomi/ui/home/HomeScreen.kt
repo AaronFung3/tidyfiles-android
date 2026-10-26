@@ -40,8 +40,8 @@ import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.domain.ui.UiPreferences
 import eu.kanade.presentation.util.Screen
 import eu.kanade.presentation.util.isTabletUi
-import eu.kanade.tachiyomi.ui.browse.BrowseTab
 import eu.kanade.tachiyomi.ui.download.DownloadQueueScreen
+import eu.kanade.tachiyomi.ui.browse.BrowseTab
 import eu.kanade.tachiyomi.ui.library.LibraryTab
 import eu.kanade.tachiyomi.ui.libraryUpdateError.LibraryUpdateErrorScreen
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
@@ -76,10 +76,9 @@ object HomeScreen : Screen() {
     @Suppress("ConstPropertyName")
     private const val TabNavigatorKey = "HomeTabs"
 
-    // tidyFiles --> 只有三個 tab：書架、瀏覽來源、更多（更新／歷史已移除）
+    // tidyFiles --> 只有兩個 tab：書架、更多（瀏覽來源／更新／歷史已移除）
     private val TABS = listOf(
         LibraryTab,
-        BrowseTab,
         MoreTab,
     )
     // tidyFiles <--
