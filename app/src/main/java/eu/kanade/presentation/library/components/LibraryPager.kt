@@ -11,6 +11,7 @@ import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -81,7 +82,9 @@ fun LibraryPager(
         val onClickManga: (LibraryManga) -> Unit = { onClickManga(category, it) }
         val onLongClickManga: (LibraryManga) -> Unit = { onLongClickManga(category, it) }
         // tidyFiles --> 書架「一堆堆」分組顯示（有 tag 按 tag，冇 tag 按書名開頭）
-        val groupItems = remember { Injekt.get<LibraryPreferences>().folderGroups().get() }
+        // 用 collectAsState 才會跟住設定即時變；remember 只會攞第一次嘅值
+        val folderGroupsPreference = remember { Injekt.get<LibraryPreferences>().folderGroups() }
+        val groupItems by folderGroupsPreference.collectAsState(initial = folderGroupsPreference.get())
         // tidyFiles <--
 
         when (displayMode) {

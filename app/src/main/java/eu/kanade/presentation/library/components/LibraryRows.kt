@@ -26,7 +26,11 @@ private const val OTHER_GROUP = "其他"
 private const val DIGIT_GROUP = "0-9"
 
 internal fun buildLibraryRows(items: List<LibraryItem>): List<LibraryRow> {
+    if (items.size < 2) return emptyList()
     val hasTags = items.any { !it.libraryManga.manga.genre.isNullOrEmpty() }
+    // 冇 tag 而書名全部係雜湊字串（PC 書庫未打 tag 時）→ 分組冇意義，
+    // 唔好出一個「0-9 全部」嘅假標題。
+    if (!hasTags && items.all { looksLikeHash(it.libraryManga.manga.title) }) return emptyList()
 
     val grouped: List<Pair<String, List<LibraryItem>>> = if (hasTags) {
         val map = LinkedHashMap<String, MutableList<LibraryItem>>()
@@ -51,12 +55,21 @@ internal fun buildLibraryRows(items: List<LibraryItem>): List<LibraryRow> {
             .map { it.key to it.value.toList() }
     }
 
+    // 得一組嘅話標題只係噪音（睇落同冇分組一樣），索性唔分
+    if (grouped.size <= 1) return emptyList()
+
     return grouped.flatMap { (name, list) ->
         buildList<LibraryRow> {
             add(LibraryRow.Header(name, list.size))
             list.forEach { add(LibraryRow.Manga(it)) }
         }
     }
+}
+
+/** 書名似 PC 書庫嘅雜湊資料夾名（例如 003d46cb1a…）就當冇可讀標題。 */
+private fun looksLikeHash(title: String): Boolean {
+    val text = title.trim()
+    return text.length >= 8 && text.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }
 }
 
 private fun bucketOf(title: String): String {

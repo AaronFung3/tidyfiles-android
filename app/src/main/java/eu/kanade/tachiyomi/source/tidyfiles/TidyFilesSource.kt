@@ -32,7 +32,14 @@ class TidyFilesSource(
 
         private const val USER_AGENT = "tidyFiles-android/1"
         private const val DEFAULT_URL = "http://127.0.0.1:8765"
+
+        // 書架快取有效期：書庫更新會逐本書問一次，唔快取就會每本書掃一次 PC 書庫
+        private const val SHELF_TTL_MS = 5 * 60_000L
     }
+
+    // PC 書架快照。圖書館更新逐本漫畫查詢，每本都打一次 /api/shelf 會令進度永遠停在 0%
+    @Volatile private var shelfCache: List<ShelfItem>? = null
+    @Volatile private var shelfFetchedAt: Long = 0L
 
     override val id: Long = ID
     override val name: String = NAME
@@ -58,14 +65,14 @@ class TidyFilesSource(
 
     override suspend fun getPopularManga(page: Int): MangasPage {
         if (page > 1) return MangasPage(emptyList(), false)
-        return MangasPage(groupBySeries(fetchShelf()), false)
+        return MangasPage(groupBySeries(fetchShelf(force = true)), false)
     }
 
     override suspend fun getLatestUpdates(page: Int): MangasPage = getPopularManga(page)
 
     override suspend fun getSearchManga(page: Int, query: String, filters: FilterList): MangasPage {
         if (page > 1) return MangasPage(emptyList(), false)
-        val shelves = groupBySeries(fetchShelf())
+        val shelves = groupBySeries(fetchShelf(force = true))
         val keyword = query.trim().lowercase()
         if (keyword.isEmpty()) return MangasPage(shelves, false)
         return MangasPage(shelves.filter { it.title.lowercase().contains(keyword) }, false)
@@ -120,7 +127,18 @@ class TidyFilesSource(
             }
         }
 
-    private suspend fun fetchShelf(): List<ShelfItem> {
+    /**
+     * 讀 PC 書架。
+     *
+     * 一定要快取：書庫更新會逐本漫畫問一次（`UpdateMangaFromRemote` → `getMangaUpdate`），
+     * 每本都重新掃一次 PC 書架（288 本要十幾秒）就會令「更新書櫃」進度永遠停喺 0%。
+     * force = 用戶主動開來源／搜尋時，才真正重新掃描。
+     */
+    private suspend fun fetchShelf(force: Boolean = false): List<ShelfItem> {
+        val cached = shelfCache
+        if (!force && cached != null && System.currentTimeMillis() - shelfFetchedAt < SHELF_TTL_MS) {
+            return cached
+        }
         val json = fetchJson("/api/shelf", listOf("lib" to "1"))
         if (!json.optBoolean("ok", false)) {
             throw Exception("tidyFiles：書架讀取失敗")
@@ -146,7 +164,9 @@ class TidyFilesSource(
                 coverN = obj.optInt("cover_n", 0),
             )
         }
-        // 每次讀到 PC 書架就順手同步落本地書庫（內部 30 秒節流，唔會拖慢）
+        shelfCache = out
+        shelfFetchedAt = System.currentTimeMillis()
+        // 每次真正讀到 PC 書架就順手同步落本地書庫（內部 30 秒節流，唔會拖慢）
         syncLibrary(out)
         return out
     }
