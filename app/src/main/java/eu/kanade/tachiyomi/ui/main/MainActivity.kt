@@ -55,6 +55,7 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.domain.connections.service.ConnectionsPreferences
 import eu.kanade.domain.source.interactor.GetIncognitoState
+import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.domain.sync.SyncPreferences
 import eu.kanade.presentation.components.AppStateBanners
 import eu.kanade.presentation.components.DownloadedOnlyBannerBackgroundColor
@@ -68,6 +69,7 @@ import eu.kanade.presentation.more.settings.screen.about.AboutScreen.Companion.g
 import eu.kanade.presentation.more.settings.screen.about.WhatsNewDialog
 import eu.kanade.presentation.more.settings.screen.browse.ExtensionStoresScreen
 import eu.kanade.presentation.more.settings.screen.data.RestoreBackupScreen
+import eu.kanade.presentation.tidyfiles.TidyFilesSetupScreen
 import eu.kanade.presentation.util.AssistContentScreen
 import eu.kanade.presentation.util.DefaultNavigatorScreenTransition
 import eu.kanade.tachiyomi.BuildConfig
@@ -218,6 +220,19 @@ class MainActivity : BaseActivity() {
         // SY <--
 
         setComposeContent {
+            // tidyFiles --> 首次啟動授權閘：未驗證過 PC 伺服器就只顯示授權頁
+            val tidyFilesPreferences = remember { Injekt.get<SourcePreferences>() }
+            var tidyFilesReady by remember { mutableStateOf(tidyFilesPreferences.tidyFilesSetupDone().get()) }
+            if (!tidyFilesReady) {
+                TidyFilesSetupScreen(
+                    initialUrl = tidyFilesPreferences.tidyFilesUrl().get(),
+                    initialToken = tidyFilesPreferences.tidyFilesToken().get(),
+                    onDone = { tidyFilesReady = true },
+                )
+                return@setComposeContent
+            }
+            // tidyFiles <--
+
             val context = LocalContext.current
 
             var incognito by remember { mutableStateOf(getIncognitoState.await(null)) }

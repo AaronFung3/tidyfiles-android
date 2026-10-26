@@ -149,6 +149,9 @@ class SourcePreferences(
     fun tidyFilesUrl() = preferenceStore.getString("tidyfiles_url", "http://127.0.0.1:8765")
 
     fun tidyFilesToken() = preferenceStore.getString("tidyfiles_token", "")
+
+    /** 首次啟動授權閘：未驗證成功之前一律唔准入 app。 */
+    fun tidyFilesSetupDone() = preferenceStore.getBoolean("tidyfiles_setup_done", false)
     // tidyFiles <--
 
     companion object {
