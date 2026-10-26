@@ -84,7 +84,6 @@ import eu.kanade.tachiyomi.util.system.copyToClipboard
 import eu.kanade.tachiyomi.util.system.toShareIntent
 import eu.kanade.tachiyomi.util.system.toast
 import exh.pagepreview.PagePreviewScreen
-import exh.recs.RecommendsScreen
 import exh.source.ExhPreferences
 import exh.source.MERGED_SOURCE_ID
 import exh.source.anyIs
@@ -378,9 +377,8 @@ class MangaScreen(
                 )
             },
             onEditInfoClicked = screenModel::showEditMangaInfoDialog,
-            onRecommendClicked = {
-                openRecommends(navigator, screenModel.source?.getMainSource(), successState.manga)
-            },
+            // tidyFiles --> 推薦功能已移除
+            onRecommendClicked = {},
             onMergedSettingsClicked = screenModel::showEditMergedSettingsDialog,
             onMergeClicked = { openSmartSearch(navigator, successState.manga) },
             onMergeWithAnotherClicked = {
@@ -926,12 +924,5 @@ class MangaScreen(
     }
     // EXH <--
 
-    // AZ -->
-    private fun openRecommends(navigator: Navigator, source: Source?, manga: Manga) {
-        source ?: return
-        RecommendsScreen.Args.SingleSourceManga(manga.id, source.id)
-            .let(::RecommendsScreen)
-            .let(navigator::push)
-    }
     // AZ <--
 }

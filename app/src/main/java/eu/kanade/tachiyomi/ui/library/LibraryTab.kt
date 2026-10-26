@@ -55,10 +55,6 @@ import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
 import eu.kanade.tachiyomi.util.system.toast
 import exh.favorites.FavoritesSyncStatus
-import exh.recs.RecommendsScreen
-import exh.recs.batch.RecommendationSearchBottomSheetDialog
-import exh.recs.batch.RecommendationSearchProgressDialog
-import exh.recs.batch.SearchStatus
 import exh.source.MERGED_SOURCE_ID
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toPersistentList
@@ -274,7 +270,6 @@ data object LibraryTab : Tab {
                     // KMK <--
                     // SY -->
                     onClickCleanTitles = screenModel::cleanTitles.takeIf { state.showCleanTitles },
-                    onClickCollectRecommendations = screenModel::showRecommendationSearchDialog.takeIf { state.selection.size > 1 },
                     onClickAddToMangaDex = screenModel::syncMangaToDex.takeIf { state.showAddToMangadex },
                     onClickResetInfo = screenModel::resetInfo.takeIf { state.showResetInfo },
                     // SY <--
@@ -405,16 +400,6 @@ data object LibraryTab : Tab {
                     },
                 )
             }
-            is LibraryScreenModel.Dialog.RecommendationSearchSheet -> {
-                RecommendationSearchBottomSheetDialog(
-                    onDismissRequest = onDismissRequest,
-                    onSearchRequest = {
-                        onDismissRequest()
-                        screenModel.clearSelection()
-                        screenModel.runRecommendationSearch(dialog.manga)
-                    },
-                )
-            }
             // SY <--
             null -> {}
         }
@@ -426,11 +411,6 @@ data object LibraryTab : Tab {
             openManga = { navigator.push(MangaScreen(it)) },
         )
 
-        RecommendationSearchProgressDialog(
-            status = screenModel.recommendationSearch.status.collectAsState().value,
-            setStatusIdle = { screenModel.recommendationSearch.status.value = SearchStatus.Idle },
-            setStatusCancelling = { screenModel.recommendationSearch.status.value = SearchStatus.Cancelling },
-        )
         // SY <--
 
         BackHandler(enabled = state.selectionMode || state.searchQuery != null) {
@@ -455,30 +435,6 @@ data object LibraryTab : Tab {
                 // <-- AM (DISCORD)
             }
         }
-
-        // SY -->
-        val recSearchState by screenModel.recommendationSearch.status.collectAsState()
-        LaunchedEffect(recSearchState) {
-            when (val current = recSearchState) {
-                is SearchStatus.Finished.WithResults -> {
-                    RecommendsScreen.Args.MergedSourceMangas(current.results)
-                        .let(::RecommendsScreen)
-                        .let(navigator::push)
-
-                    screenModel.recommendationSearch.status.value = SearchStatus.Idle
-                }
-                is SearchStatus.Finished.WithoutResults -> {
-                    context.toast(SYMR.strings.rec_no_results)
-                    screenModel.recommendationSearch.status.value = SearchStatus.Idle
-                }
-                is SearchStatus.Cancelling -> {
-                    screenModel.cancelRecommendationSearch()
-                    screenModel.recommendationSearch.status.value = SearchStatus.Idle
-                }
-                else -> {}
-            }
-        }
-        // SY <--
 
         LaunchedEffect(Unit) {
             launch { queryEvent.receiveAsFlow().collect(screenModel::search) }

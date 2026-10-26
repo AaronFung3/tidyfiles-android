@@ -41,7 +41,6 @@ import exh.md.utils.FollowStatus
 import exh.md.utils.MdUtil
 import exh.metadata.sql.models.SearchTag
 import exh.metadata.sql.models.SearchTitle
-import exh.recs.batch.RecommendationSearchHelper
 import exh.search.Namespace
 import exh.search.QueryComponent
 import exh.search.SearchEngine
@@ -64,7 +63,6 @@ import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.collections.immutable.toImmutableSet
 import kotlinx.coroutines.DelicateCoroutinesApi
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -166,9 +164,6 @@ class LibraryScreenModel(
 
     // SY -->
     val favoritesSync = FavoritesSyncHelper(preferences.context)
-    val recommendationSearch = RecommendationSearchHelper(preferences.context)
-
-    private var recommendationSearchJob: Job? = null
     // SY <--
 
     init {
@@ -1187,11 +1182,6 @@ class LibraryScreenModel(
     }
 
     // SY -->
-    fun showRecommendationSearchDialog() {
-        val mangaList = state.value.selectedManga
-        mutableState.update { it.copy(dialog = Dialog.RecommendationSearchSheet(mangaList)) }
-    }
-
     private suspend fun filterLibrary(unfiltered: List<LibraryItem>, query: String?, loggedInTrackServices: Map<Long, TriState>): List<LibraryItem> {
         return if (unfiltered.isNotEmpty() && !query.isNullOrBlank()) {
             // AZ -->
@@ -1500,7 +1490,6 @@ class LibraryScreenModel(
         // SY -->
         data object SyncFavoritesWarning : Dialog
         data object SyncFavoritesConfirm : Dialog
-        data class RecommendationSearchSheet(val manga: List<Manga>) : Dialog
         // SY <--
     }
 
@@ -1609,16 +1598,6 @@ class LibraryScreenModel(
         SManga.CANCELLED.toLong() to (MR.strings.cancelled to 6L),
     )
     // KMK <--
-
-    fun runRecommendationSearch(selection: List<Manga>) {
-        recommendationSearch.runSearch(screenModelScope, selection)?.let {
-            recommendationSearchJob = it
-        }
-    }
-
-    fun cancelRecommendationSearch() {
-        recommendationSearchJob?.cancel()
-    }
 
     fun runSync() {
         favoritesSync.runSync(screenModelScope)

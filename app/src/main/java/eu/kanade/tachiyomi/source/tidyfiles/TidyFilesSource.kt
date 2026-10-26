@@ -38,6 +38,7 @@ class TidyFilesSource(
     }
 
     // PC 書架快照。圖書館更新逐本漫畫查詢，每本都打一次 /api/shelf 會令進度永遠停在 0%
+
     @Volatile private var shelfCache: List<ShelfItem>? = null
     @Volatile private var shelfFetchedAt: Long = 0L
 

@@ -217,14 +217,6 @@ fun MangaToolbar(
                         )
                     }
                     // KMK <--
-                    if (onClickRecommend != null) {
-                        add(
-                            AppBar.OverflowAction(
-                                title = stringResource(SYMR.strings.az_recommends),
-                                onClick = onClickRecommend,
-                            ),
-                        )
-                    }
                     if (onClickMergedSettings != null) {
                         add(
                             AppBar.OverflowAction(

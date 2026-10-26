@@ -30,14 +30,6 @@ fun MangaInfoButtons(
                     Text(stringResource(SYMR.strings.merge_with_another_source))
                 }
             }
-            if (showRecommendsButton) {
-                // KMK -->
-                OutlinedButtonWithArrow(
-                    text = stringResource(SYMR.strings.az_recommends),
-                    onClick = onRecommendClicked,
-                )
-                // KMK <--
-            }
         }
     }
 }
