@@ -26,7 +26,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.CallMerge
 import androidx.compose.material.icons.filled.Brush
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.HourglassDisabled
@@ -98,16 +97,12 @@ import org.intellij.markdown.MarkdownElementTypes
 import org.intellij.markdown.MarkdownTokenTypes
 import org.intellij.markdown.ast.findChildOfType
 import tachiyomi.domain.library.service.LibraryPreferences
-import tachiyomi.domain.library.service.LibraryPreferences.Companion.MANGA_NON_COMPLETED
-import tachiyomi.domain.manga.interactor.FetchInterval
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.i18n.MR
 import tachiyomi.i18n.kmk.KMR
-import tachiyomi.i18n.sy.SYMR
 import tachiyomi.presentation.core.components.material.DISABLED_ALPHA
 import tachiyomi.presentation.core.components.material.TextButton
 import tachiyomi.presentation.core.components.material.padding
-import tachiyomi.presentation.core.i18n.pluralStringResource
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.util.clickableNoIndication
 import tachiyomi.presentation.core.util.collectAsState
@@ -115,7 +110,6 @@ import tachiyomi.presentation.core.util.secondaryItemAlpha
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import java.time.Instant
-import java.time.temporal.ChronoUnit
 import kotlin.math.roundToInt
 import tachiyomi.domain.manga.model.MangaCover as DomainMangaCover
 
@@ -250,31 +244,7 @@ fun MangaActionRow(
     // KMK <--
     modifier: Modifier = Modifier,
 ) {
-    // KMK -->
-    val libraryPreferences: LibraryPreferences = Injekt.get()
-    val restrictions = libraryPreferences.autoUpdateMangaRestrictions().get()
-    val notSkipCompleted = MANGA_NON_COMPLETED !in restrictions || status != SManga.COMPLETED.toLong()
-    val selectedInterval by remember(interval) { mutableIntStateOf(if (interval < 0) -interval else 0) }
-    // KMK <--
     val defaultActionButtonColor = MaterialTheme.colorScheme.onSurface.copy(alpha = DISABLED_ALPHA)
-
-    // TODO: show something better when using custom interval
-    val nextUpdateDays = remember(nextUpdate, selectedInterval, notSkipCompleted) {
-        return@remember if (nextUpdate != null &&
-            // KMK -->
-            notSkipCompleted
-            // KMK <--
-        ) {
-            val now = Instant.now()
-            now.until(nextUpdate, ChronoUnit.DAYS).toInt().coerceAtLeast(0)
-                // KMK -->
-                .takeIf { selectedInterval != FetchInterval.MANUAL_DISABLE }
-                ?: FetchInterval.MANUAL_DISABLE
-            // KMK <--
-        } else {
-            null
-        }
-    }
 
     Row(modifier = modifier.padding(start = 16.dp, top = 8.dp, end = 16.dp)) {
         MangaActionButton(
@@ -288,64 +258,7 @@ fun MangaActionRow(
             onClick = onAddToLibraryClicked,
             onLongClick = onEditCategory,
         )
-        MangaActionButton(
-            title = when (nextUpdateDays) {
-                null -> stringResource(MR.strings.not_applicable)
-                0 -> stringResource(MR.strings.manga_interval_expected_update_soon)
-                // KMK -->
-                FetchInterval.MANUAL_DISABLE -> stringResource(MR.strings.disabled)
-                // KMK <--
-                else -> pluralStringResource(
-                    MR.plurals.day,
-                    count = nextUpdateDays,
-                    nextUpdateDays,
-                )
-            },
-            icon = Icons.Default.HourglassEmpty
-                // KMK -->
-                .takeIf { nextUpdateDays != FetchInterval.MANUAL_DISABLE }
-                ?: Icons.Default.HourglassDisabled,
-            // KMK <--
-            color = if (isUserIntervalMode ||
-                // KMK -->
-                nextUpdateDays?.let { it <= 1 } == true
-                // KMK <--
-            ) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                defaultActionButtonColor
-            },
-            onClick = { onEditIntervalClicked?.invoke() },
-        )
-        MangaActionButton(
-            title = if (trackingCount == 0) {
-                stringResource(MR.strings.manga_tracking_tab)
-            } else {
-                pluralStringResource(MR.plurals.num_trackers, count = trackingCount, trackingCount)
-            },
-            icon = if (trackingCount == 0) Icons.Outlined.Sync else Icons.Outlined.Done,
-            color = if (trackingCount == 0) defaultActionButtonColor else MaterialTheme.colorScheme.primary,
-            onClick = onTrackingClicked,
-        )
-        if (onWebViewClicked != null) {
-            MangaActionButton(
-                title = stringResource(MR.strings.action_web_view),
-                icon = Icons.Outlined.Public,
-                color = MaterialTheme.colorScheme.primary, // KMK: defaultActionButtonColor
-                onClick = onWebViewClicked,
-                onLongClick = onWebViewLongClicked,
-            )
-        }
-        // SY -->
-        if (onMergeClicked != null) {
-            MangaActionButton(
-                title = stringResource(SYMR.strings.merge),
-                icon = Icons.AutoMirrored.Outlined.CallMerge,
-                color = MaterialTheme.colorScheme.primary, // KMK: defaultActionButtonColor
-                onClick = onMergeClicked,
-            )
-        }
-        // SY <--
+        // tidyFiles --> 更新間隔／歷程（追蹤）／WebView／合併 全部移走，書內只留「在書櫃中」
     }
 }
 

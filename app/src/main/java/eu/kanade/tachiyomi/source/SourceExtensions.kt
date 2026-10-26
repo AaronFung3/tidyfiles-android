@@ -33,16 +33,9 @@ fun Source.getNameForMangaInfo(
         isLocalOrStub() -> toString()
         // KMK <--
         // For edge cases where user disables a source they got manga of in their library.
-        hasOneActiveLanguages && !isInEnabledLanguages ->
-            // KMK -->
-            "$name (${FlagEmoji.getEmojiLangFlag(lang)})"
-        // KMK <--
-        // Hide the language tag when only one language is used.
-        hasOneActiveLanguages && isInEnabledLanguages -> name
-        else ->
-            // KMK -->
-            "$name (${FlagEmoji.getEmojiLangFlag(lang)})"
-        // KMK <--
+        // tidyFiles --> 來源名後面唔再顯示語言國旗（單一來源唔需要）
+        else -> name
+        // tidyFiles <--
     }
 }
 
