@@ -268,6 +268,9 @@ fun ExpandableMangaDescription(
     description: String?,
     tagsProvider: () -> List<String>?,
     notes: String,
+    // tidyFiles -->
+    dateAdded: Long = 0L,
+    // tidyFiles <--
     onTagSearch: (String) -> Unit,
     onCopyTagToClipboard: (tag: String) -> Unit,
     onEditNotes: () -> Unit,
@@ -298,6 +301,20 @@ fun ExpandableMangaDescription(
                 .padding(horizontal = 16.dp)
                 .clickableNoIndication { onExpanded(!expanded) },
         )
+        // tidyFiles --> 詳情區顯示加入書櫃日期
+        if (dateAdded > 0L) {
+            val addedDate = remember(dateAdded) {
+                java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+                    .format(java.util.Date(dateAdded))
+            }
+            Text(
+                text = "加入書櫃：$addedDate",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp),
+            )
+        }
+        // tidyFiles <--
         val tags = tagsProvider()
         if (!tags.isNullOrEmpty()) {
             Box(
@@ -707,42 +724,50 @@ private fun ColumnScope.MangaContentInfo(
 
     Spacer(modifier = Modifier.height(2.dp))
 
+    // tidyFiles --> 冇狀態（UNKNOWN）就唔顯示「不明」同個 icon，只淨來源名
+    val hasStatus = status != SManga.UNKNOWN.toLong()
     Row(
         modifier = Modifier.secondaryItemAlpha(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            imageVector = when (status) {
-                SManga.ONGOING.toLong() -> Icons.Outlined.Schedule
-                SManga.COMPLETED.toLong() -> Icons.Outlined.DoneAll
-                SManga.LICENSED.toLong() -> Icons.Outlined.AttachMoney
-                SManga.PUBLISHING_FINISHED.toLong() -> Icons.Outlined.Done
-                SManga.CANCELLED.toLong() -> Icons.Outlined.Close
-                SManga.ON_HIATUS.toLong() -> Icons.Outlined.Pause
-                else -> Icons.Outlined.Block
-            },
-            contentDescription = null,
-            modifier = Modifier
-                .padding(end = 4.dp)
-                .size(16.dp),
-        )
-        ProvideTextStyle(MaterialTheme.typography.bodyMedium) {
-            Text(
-                text = when (status) {
-                    SManga.ONGOING.toLong() -> stringResource(MR.strings.ongoing)
-                    SManga.COMPLETED.toLong() -> stringResource(MR.strings.completed)
-                    SManga.LICENSED.toLong() -> stringResource(MR.strings.licensed)
-                    SManga.PUBLISHING_FINISHED.toLong() -> stringResource(MR.strings.publishing_finished)
-                    SManga.CANCELLED.toLong() -> stringResource(MR.strings.cancelled)
-                    SManga.ON_HIATUS.toLong() -> stringResource(MR.strings.on_hiatus)
-                    else -> stringResource(MR.strings.unknown)
+        if (hasStatus) {
+            Icon(
+                imageVector = when (status) {
+                    SManga.ONGOING.toLong() -> Icons.Outlined.Schedule
+                    SManga.COMPLETED.toLong() -> Icons.Outlined.DoneAll
+                    SManga.LICENSED.toLong() -> Icons.Outlined.AttachMoney
+                    SManga.PUBLISHING_FINISHED.toLong() -> Icons.Outlined.Done
+                    SManga.CANCELLED.toLong() -> Icons.Outlined.Close
+                    SManga.ON_HIATUS.toLong() -> Icons.Outlined.Pause
+                    else -> Icons.Outlined.Block
                 },
-                overflow = TextOverflow.Ellipsis,
-                maxLines = 1,
+                contentDescription = null,
+                modifier = Modifier
+                    .padding(end = 4.dp)
+                    .size(16.dp),
             )
+        }
+        ProvideTextStyle(MaterialTheme.typography.bodyMedium) {
+            if (hasStatus) {
+                Text(
+                    text = when (status) {
+                        SManga.ONGOING.toLong() -> stringResource(MR.strings.ongoing)
+                        SManga.COMPLETED.toLong() -> stringResource(MR.strings.completed)
+                        SManga.LICENSED.toLong() -> stringResource(MR.strings.licensed)
+                        SManga.PUBLISHING_FINISHED.toLong() -> stringResource(MR.strings.publishing_finished)
+                        SManga.CANCELLED.toLong() -> stringResource(MR.strings.cancelled)
+                        SManga.ON_HIATUS.toLong() -> stringResource(MR.strings.on_hiatus)
+                        else -> stringResource(MR.strings.unknown)
+                    },
+                    overflow = TextOverflow.Ellipsis,
+                    maxLines = 1,
+                )
+            }
             // KMK -->
             if (isSourceIncognito) {
-                DotSeparatorText()
+                if (hasStatus) {
+                    DotSeparatorText()
+                }
                 Icon(
                     painter = rememberVectorPainter(ImageVector.vectorResource(R.drawable.ic_glasses_with_hat_24dp)),
                     contentDescription = stringResource(MR.strings.pref_incognito_mode),
@@ -753,7 +778,9 @@ private fun ColumnScope.MangaContentInfo(
                 )
             }
             // KMK <--
-            DotSeparatorText()
+            if (hasStatus) {
+                DotSeparatorText()
+            }
             if (isStubSource) {
                 Icon(
                     imageVector = Icons.Filled.Warning,

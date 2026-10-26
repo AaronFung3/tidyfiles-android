@@ -163,6 +163,7 @@ class TidyFilesSource(
                     .filter { it.isNotEmpty() },
                 pages = obj.optInt("pages", 0),
                 coverN = obj.optInt("cover_n", 0),
+                mtime = obj.optLong("mtime", 0L),
             )
         }
         shelfCache = out
@@ -185,6 +186,8 @@ class TidyFilesSource(
                 tags = list.flatMap { it.tags }.distinct(),
                 description = buildDescription(first, list),
                 coverUrl = pageUrl(cover.rel, cover.coverN.coerceAtLeast(0)),
+                // tidyFiles --> 用 PC 檔案日期（秒→毫秒）做加入日期
+                dateAdded = list.maxOfOrNull { it.mtime }?.takeIf { it > 0L }?.times(1000L) ?: 0L,
             )
         }
         TidyFilesSync.sync(series, id)
@@ -265,5 +268,6 @@ class TidyFilesSource(
         val tags: List<String>,
         val pages: Int,
         val coverN: Int,
+        val mtime: Long,
     )
 }

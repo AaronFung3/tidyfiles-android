@@ -10,6 +10,7 @@ import mihon.domain.source.interactor.UpdateMangaFromRemote
 import tachiyomi.domain.category.model.Category
 import tachiyomi.domain.category.repository.CategoryRepository
 import tachiyomi.domain.manga.model.Manga
+import tachiyomi.domain.manga.model.MangaUpdate
 import tachiyomi.domain.manga.repository.MangaRepository
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
@@ -22,6 +23,8 @@ data class TidyFilesSeries(
     val tags: List<String>,
     val description: String,
     val coverUrl: String?,
+    /** PC 檔案日期（epoch 毫秒，0 = 冇）→ 做「加入書櫃日期」。 */
+    val dateAdded: Long = 0L,
 )
 
 /**
@@ -82,6 +85,12 @@ object TidyFilesSync {
             }
             if (manga == null || manga.id <= 0L) return@forEach
 
+            // tidyFiles --> 用 PC 檔案日期做「加入書櫃日期」，已存在嘅書都會校正
+            if (existing != null && item.dateAdded > 0L && item.dateAdded != manga.dateAdded) {
+                mangaRepository.update(MangaUpdate(id = manga.id, dateAdded = item.dateAdded))
+            }
+            // tidyFiles <--
+
             // tidyFiles：tag 唔再逐粒開分類，改成「作者 / 品質 / 其他」三個分類 tab，
             // 值（作者名、品質標記）交返手機端用 chips 篩。
             val kinds = item.tags.mapNotNull { TidyFilesTagKind.kindOf(it) }.distinct()
@@ -136,7 +145,7 @@ object TidyFilesSync {
         ogGenre = tags.ifEmpty { null },
         ogStatus = 0L,
         favorite = true,
-        dateAdded = timestamp,
+        dateAdded = dateAdded.takeIf { it > 0L } ?: timestamp,
         lastUpdate = timestamp,
         updateStrategy = UpdateStrategy.ALWAYS_UPDATE,
         initialized = true,
