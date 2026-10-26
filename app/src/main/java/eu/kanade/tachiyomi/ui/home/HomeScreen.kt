@@ -42,12 +42,10 @@ import eu.kanade.presentation.util.Screen
 import eu.kanade.presentation.util.isTabletUi
 import eu.kanade.tachiyomi.ui.browse.BrowseTab
 import eu.kanade.tachiyomi.ui.download.DownloadQueueScreen
-import eu.kanade.tachiyomi.ui.history.HistoryTab
 import eu.kanade.tachiyomi.ui.library.LibraryTab
 import eu.kanade.tachiyomi.ui.libraryUpdateError.LibraryUpdateErrorScreen
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.more.MoreTab
-import eu.kanade.tachiyomi.ui.updates.UpdatesTab
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
@@ -178,8 +176,8 @@ object HomeScreen : Screen() {
                     openTabEvent.receiveAsFlow().collectLatest {
                         tabNavigator.current = when (it) {
                             is Tab.Library -> LibraryTab
-                            Tab.Updates -> UpdatesTab
-                            Tab.History -> HistoryTab
+                            Tab.Updates -> LibraryTab
+                            Tab.History -> LibraryTab
                             is Tab.Browse -> {
                                 if (it.toExtensions) {
                                     BrowseTab.showExtension()
@@ -278,29 +276,6 @@ object HomeScreen : Screen() {
         BadgedBox(
             badge = {
                 when {
-                    tab is UpdatesTab -> {
-                        val count by produceState(initialValue = 0) {
-                            val pref = Injekt.get<LibraryPreferences>()
-                            combine(
-                                pref.newShowUpdatesCount().changes(),
-                                pref.newUpdatesCount().changes(),
-                            ) { show, count -> if (show) count else 0 }
-                                .collectLatest { value = it }
-                        }
-                        if (count > 0) {
-                            Badge {
-                                val desc = pluralStringResource(
-                                    MR.plurals.notification_chapters_generic,
-                                    count = count,
-                                    count,
-                                )
-                                Text(
-                                    text = count.toString(),
-                                    modifier = Modifier.semantics { contentDescription = desc },
-                                )
-                            }
-                        }
-                    }
                     BrowseTab::class.isInstance(tab) -> {
                         val count by produceState(initialValue = 0) {
                             Injekt.get<SourcePreferences>().extensionUpdatesCount().changes()
