@@ -425,7 +425,6 @@ data object LibraryTab : Tab {
         LaunchedEffect(state.isLoading) {
             if (!state.isLoading) {
                 (context as? MainActivity)?.ready = true
-
             }
         }
 

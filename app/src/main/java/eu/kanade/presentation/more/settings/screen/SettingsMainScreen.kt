@@ -185,13 +185,16 @@ object SettingsMainScreen : Screen() {
         val screen: VoyagerScreen,
     )
 
-    // tidyFiles --> 呢啲設定頁對應嘅功能（下載、同步追蹤、Discord、EH、MangaDex、備份／儲存空間）已經移除
+    // tidyFiles --> 只留 5 項：外觀、書庫、閱讀器、tidyFiles 連線、關於（其餘功能頁全部隱藏）
     private val tidyFilesHiddenScreens: Set<VoyagerScreen> = setOf(
         SettingsDownloadScreen,
         SettingsTrackingScreen,
         SettingsEhScreen,
         SettingsMangadexScreen,
         SettingsDataScreen,
+        SettingsBrowseScreen,
+        SettingsSecurityScreen,
+        SettingsAdvancedScreen,
     )
     // tidyFiles <--
 

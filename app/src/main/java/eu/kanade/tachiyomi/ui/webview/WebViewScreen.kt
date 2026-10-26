@@ -35,6 +35,5 @@ class WebViewScreen(
             onOpenInBrowser = { screenModel.openInBrowser(context, it) },
             onClearCookies = screenModel::clearCookies,
         )
-
     }
 }

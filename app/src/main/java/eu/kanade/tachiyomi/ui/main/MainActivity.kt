@@ -370,7 +370,6 @@ class MainActivity : BaseActivity() {
                             }
                         }
                         .launchIn(this)
-
                 }
 
                 HandleOnNewIntent(context = context, navigator = navigator)

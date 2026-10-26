@@ -1121,7 +1121,6 @@ class ReaderActivity : BaseActivity() {
                 assistUrl = url
             }
         }
-
     }
 
     /**
@@ -1543,5 +1542,4 @@ class ReaderActivity : BaseActivity() {
             binding.viewerContainer.setLayerType(LAYER_TYPE_HARDWARE, paint)
         }
     }
-
 }
