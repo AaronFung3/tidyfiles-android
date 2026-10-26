@@ -1,7 +1,6 @@
 package eu.kanade.presentation.manga.components
 
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.FlipToBack
 import androidx.compose.material.icons.outlined.SelectAll
@@ -9,10 +8,6 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.unit.dp
@@ -21,7 +16,6 @@ import eu.kanade.domain.ui.UiPreferences
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarActions
 import eu.kanade.presentation.components.AppBarTitle
-import eu.kanade.presentation.components.DownloadDropdownMenu
 import eu.kanade.presentation.manga.DownloadAction
 import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceScreen
 import eu.kanade.tachiyomi.ui.browse.source.feed.SourceFeedScreen
@@ -107,16 +101,6 @@ fun MangaToolbar(
         // KMK <--
         navigateUp = navigateUp,
         actions = {
-            var downloadExpanded by remember { mutableStateOf(false) }
-            if (onClickDownload != null) {
-                val onDismissRequest = { downloadExpanded = false }
-                DownloadDropdownMenu(
-                    expanded = downloadExpanded,
-                    onDismissRequest = onDismissRequest,
-                    onDownloadClicked = onClickDownload,
-                )
-            }
-
             val filterTint = if (hasFilters) MaterialTheme.colorScheme.active else LocalContentColor.current
             AppBarActions(
                 actions = persistentListOf<AppBar.AppBarAction>().builder().apply {
@@ -136,15 +120,6 @@ fun MangaToolbar(
                             ),
                         )
                         return@apply
-                    }
-                    if (onClickDownload != null) {
-                        add(
-                            AppBar.Action(
-                                title = stringResource(MR.strings.manga_download),
-                                icon = Icons.Outlined.Download,
-                                onClick = { downloadExpanded = !downloadExpanded },
-                            ),
-                        )
                     }
                     add(
                         AppBar.Action(

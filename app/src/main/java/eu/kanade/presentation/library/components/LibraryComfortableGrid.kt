@@ -114,16 +114,9 @@ private fun ComfortableItem(
             UnreadBadge(count = libraryItem.unreadCount)
         },
         coverBadgeEnd = {
-            LanguageBadge(
-                isLocal = libraryItem.isLocal,
-                sourceLanguage = libraryItem.sourceLanguage,
-                // KMK -->
-                useLangIcon = libraryItem.useLangIcon,
-                // KMK <--
-            )
-            // KMK -->
+            // tidyFiles --> 只留來源圖示，唔顯示語言國旗
             SourceIconBadge(source = libraryItem.source)
-            // KMK <--
+            // tidyFiles <--
         },
         onLongClick = { onLongClick(libraryItem.libraryManga) },
         onClick = { onClick(libraryItem.libraryManga) },
