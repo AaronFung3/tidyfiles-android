@@ -116,6 +116,23 @@ jobs:
           java-version-file: .github/.java-version
           distribution: temurin
 
+      - name: Write signing key (tidyFiles)
+        shell: bash
+        env:
+          TF_KEYSTORE_B64: ${{ secrets.TF_KEYSTORE_B64 }}
+        run: |
+          if [ -z "${TF_KEYSTORE_B64:-}" ]; then
+            echo "::warning::TF_KEYSTORE_B64 not set — APK will be debug-signed and NOT installable as an update."
+            exit 0
+          fi
+          printf '%s' "$TF_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/tidyfiles.p12"
+          {
+            echo "TF_KEYSTORE_FILE=$RUNNER_TEMP/tidyfiles.p12"
+            echo "TF_KEYSTORE_PASSWORD=${{ secrets.TF_KEYSTORE_PASSWORD }}"
+            echo "TF_KEY_ALIAS=${{ secrets.TF_KEY_ALIAS }}"
+            echo "TF_KEY_PASSWORD=${{ secrets.TF_KEY_PASSWORD }}"
+          } >> "$GITHUB_ENV"
+
       - name: Write client_secrets.json
         if: env.HAS_CLIENT_SECRETS == 'true'
         uses: DamianReeves/write-file-action@6929a9a6d1807689191dcc8bbe62b54d70a32b42 # v1.3

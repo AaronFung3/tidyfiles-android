@@ -78,6 +78,21 @@ android {
         // KMK <--
     }
 
+    // tidyFiles --> 由 CI 環境變數提供正式簽名金鑰；本機冇提供就唔建立，build 會 fallback 去 debug 簽名
+    signingConfigs {
+        val tidyStoreFile = System.getenv("TF_KEYSTORE_FILE")
+        if (!tidyStoreFile.isNullOrBlank()) {
+            create("tidyfiles") {
+                storeFile = file(tidyStoreFile)
+                storeType = "PKCS12"
+                storePassword = System.getenv("TF_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("TF_KEY_ALIAS")
+                keyPassword = System.getenv("TF_KEY_PASSWORD")
+            }
+        }
+    }
+    // tidyFiles <--
+
     buildTypes {
         val debug by getting {
             applicationIdSuffix = ".dev"
@@ -128,6 +143,9 @@ android {
         // installed side by side.
         create("viel") {
             initWith(getByName("preview"))
+
+            // tidyFiles：有正式簽名金鑰就用，否則照舊 debug 簽名（app 內更新要簽名一致）
+            signingConfig = signingConfigs.findByName("tidyfiles") ?: signingConfigs.getByName("debug")
         }
         // KMK <--
         create("benchmark") {
