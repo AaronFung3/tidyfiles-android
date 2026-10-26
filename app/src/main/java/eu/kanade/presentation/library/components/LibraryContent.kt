@@ -48,6 +48,11 @@ fun LibraryContent(
     getDisplayMode: (Int) -> PreferenceMutableState<LibraryDisplayMode>,
     getColumnsForOrientation: (Boolean) -> PreferenceMutableState<Int>,
     getItemsForCategory: (Category) -> List<LibraryItem>,
+    // tidyFiles -->
+    tagChips: List<Pair<String, Int>> = emptyList(),
+    tagChipSelected: String? = null,
+    onTagChipSelect: (String?) -> Unit = {},
+    // tidyFiles <--
 ) {
     Column(
         modifier = Modifier.padding(
@@ -84,6 +89,14 @@ fun LibraryContent(
                         pagerState.animateScrollToPage(it)
                     }
                 },
+            )
+        }
+
+        if (tagChips.isNotEmpty()) {
+            LibraryTagChips(
+                values = tagChips,
+                selected = tagChipSelected,
+                onSelect = onTagChipSelect,
             )
         }
 

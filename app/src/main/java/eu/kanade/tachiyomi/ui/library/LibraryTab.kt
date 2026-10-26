@@ -14,8 +14,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
@@ -44,6 +47,7 @@ import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.data.download.DownloadCache
 import eu.kanade.tachiyomi.data.library.LibraryUpdateJob
 import eu.kanade.tachiyomi.data.sync.SyncDataJob
+import eu.kanade.tachiyomi.source.tidyfiles.TidyFilesTagKind
 import eu.kanade.tachiyomi.ui.browse.source.SourcesScreen
 import eu.kanade.tachiyomi.ui.browse.source.globalsearch.GlobalSearchScreen
 import eu.kanade.tachiyomi.ui.category.CategoryScreen
@@ -294,6 +298,23 @@ data object LibraryTab : Tab {
                     )
                 }
                 else -> {
+                    // tidyFiles --> 分類 tab 入面嘅值 chips（作者／品質／其他）
+                    val tagKind = state.activeCategory?.name?.takeIf { it in TidyFilesTagKind.ALL }
+                    var tagChip by rememberSaveable(tagKind) { mutableStateOf<String?>(null) }
+                    val tagChipValues = if (tagKind == null) {
+                        emptyList()
+                    } else {
+                        val counts = mutableMapOf<String, Int>()
+                        state.activeCategory?.let { category ->
+                            state.getItemsForCategory(category).forEach { item ->
+                                TidyFilesTagKind.valuesOf(item.libraryManga.manga.genre, tagKind).forEach {
+                                    counts[it] = (counts[it] ?: 0) + 1
+                                }
+                            }
+                        }
+                        counts.entries.sortedByDescending { it.value }.map { it.key to it.value }
+                    }
+                    // tidyFiles <--
                     LibraryContent(
                         categories = state.displayedCategories,
                         // KMK -->
@@ -332,7 +353,20 @@ data object LibraryTab : Tab {
                         getItemCountForCategory = { state.getItemCountForCategory(it) },
                         getDisplayMode = { screenModel.getDisplayMode() },
                         getColumnsForOrientation = { screenModel.getColumnsForOrientation(it) },
-                        getItemsForCategory = { state.getItemsForCategory(it) },
+                        getItemsForCategory = { category ->
+                            val chip = tagChip
+                            val kind = tagKind
+                            if (kind == null || chip == null) {
+                                state.getItemsForCategory(category)
+                            } else {
+                                state.getItemsForCategory(category).filter {
+                                    TidyFilesTagKind.matches(it.libraryManga.manga.genre, kind, chip)
+                                }
+                            }
+                        },
+                        tagChips = tagChipValues,
+                        tagChipSelected = tagChip,
+                        onTagChipSelect = { tagChip = it },
                     )
                 }
             }

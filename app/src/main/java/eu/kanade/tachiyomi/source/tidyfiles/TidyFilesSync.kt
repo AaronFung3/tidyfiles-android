@@ -82,16 +82,17 @@ object TidyFilesSync {
             }
             if (manga == null || manga.id <= 0L) return@forEach
 
-            if (item.tags.isEmpty()) return@forEach
+            // tidyFiles：tag 唔再逐粒開分類，改成「作者 / 品質 / 其他」三個分類 tab，
+            // 值（作者名、品質標記）交返手機端用 chips 篩。
+            val kinds = item.tags.mapNotNull { TidyFilesTagKind.kindOf(it) }.distinct()
+            if (kinds.isEmpty()) return@forEach
 
-            val categoryIds = item.tags.mapNotNull { raw ->
-                val name = raw.trim()
-                if (name.isEmpty()) return@mapNotNull null
-                categoryByName[name.lowercase()]?.id ?: run {
+            val categoryIds = kinds.mapNotNull { kind ->
+                categoryByName[kind.lowercase()]?.id ?: run {
                     val newId = categoryRepository.insert(
                         Category(
                             id = 0L,
-                            name = name,
+                            name = kind,
                             order = nextOrder,
                             flags = 0L,
                             hidden = false,
@@ -99,7 +100,7 @@ object TidyFilesSync {
                     )
                     nextOrder += 1L
                     if (newId > 0L) {
-                        categoryRepository.get(newId)?.let { categoryByName[name.lowercase()] = it }
+                        categoryRepository.get(newId)?.let { categoryByName[kind.lowercase()] = it }
                     }
                     newId.takeIf { it > 0L }
                 }
