@@ -270,7 +270,7 @@ fun LibraryBottomActionMenu(
     // KMK <--
     // SY -->
     onClickCleanTitles: (() -> Unit)?,
-    onClickCollectRecommendations: (() -> Unit)?,
+    onClickCollectRecommendations: (() -> Unit)? = null,
     onClickAddToMangaDex: (() -> Unit)?,
     onClickResetInfo: (() -> Unit)?,
     // SY <--

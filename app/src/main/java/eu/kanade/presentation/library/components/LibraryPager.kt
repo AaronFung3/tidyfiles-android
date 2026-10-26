@@ -84,7 +84,7 @@ fun LibraryPager(
         // tidyFiles --> 書架「一堆堆」分組顯示（有 tag 按 tag，冇 tag 按書名開頭）
         // 用 collectAsState 才會跟住設定即時變；remember 只會攞第一次嘅值
         val folderGroupsPreference = remember { Injekt.get<LibraryPreferences>().folderGroups() }
-        val groupItems by folderGroupsPreference.collectAsState(initial = folderGroupsPreference.get())
+        val groupItems by folderGroupsPreference.changes().collectAsState(initial = folderGroupsPreference.get())
         // tidyFiles <--
 
         when (displayMode) {
