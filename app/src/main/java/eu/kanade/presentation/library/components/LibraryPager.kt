@@ -23,9 +23,12 @@ import eu.kanade.tachiyomi.ui.library.LibraryItem
 import tachiyomi.domain.category.model.Category
 import tachiyomi.domain.library.model.LibraryDisplayMode
 import tachiyomi.domain.library.model.LibraryManga
+import tachiyomi.domain.library.service.LibraryPreferences
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.screens.EmptyScreen
 import tachiyomi.presentation.core.util.plus
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
 
 @Composable
 fun LibraryPager(
@@ -77,6 +80,9 @@ fun LibraryPager(
 
         val onClickManga: (LibraryManga) -> Unit = { onClickManga(category, it) }
         val onLongClickManga: (LibraryManga) -> Unit = { onLongClickManga(category, it) }
+        // tidyFiles --> 書架「一堆堆」分組顯示（有 tag 按 tag，冇 tag 按書名開頭）
+        val groupItems = remember { Injekt.get<LibraryPreferences>().folderGroups().get() }
+        // tidyFiles <--
 
         when (displayMode) {
             LibraryDisplayMode.List -> {
@@ -103,6 +109,7 @@ fun LibraryPager(
                     onClickContinueReading = onClickContinueReading,
                     searchQuery = searchQuery,
                     onGlobalSearchClicked = onGlobalSearchClicked,
+                    groupItems = groupItems,
                 )
             }
             LibraryDisplayMode.ComfortableGrid -> {
@@ -116,6 +123,7 @@ fun LibraryPager(
                     onClickContinueReading = onClickContinueReading,
                     searchQuery = searchQuery,
                     onGlobalSearchClicked = onGlobalSearchClicked,
+                    groupItems = groupItems,
                 )
             }
             // KMK -->
@@ -131,6 +139,7 @@ fun LibraryPager(
                     searchQuery = searchQuery,
                     onGlobalSearchClicked = onGlobalSearchClicked,
                     usePanoramaCover = true,
+                    groupItems = groupItems,
                 )
             }
             // KMK <--
@@ -173,3 +182,4 @@ private fun LibraryPagerEmptyScreen(
         )
     }
 }
+

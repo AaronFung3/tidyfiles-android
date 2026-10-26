@@ -172,6 +172,11 @@ class LibraryPreferences(
 
     fun categorizedDisplaySettings() = preferenceStore.getBoolean("categorized_display", false)
 
+    // tidyFiles -->
+    /** 書架「一堆堆」分組顯示：有 tag 按 tag 分堆，冇 tag 就按書名開頭分堆。 */
+    fun folderGroups() = preferenceStore.getBoolean("display_folder_groups", true)
+    // tidyFiles <--
+
     // KMK -->
     fun showHiddenCategories() = preferenceStore.getBoolean("hide_hidden_categories", false)
     // KMK <--
