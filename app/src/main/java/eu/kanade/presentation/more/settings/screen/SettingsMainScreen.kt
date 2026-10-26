@@ -50,7 +50,6 @@ import exh.assets.ehassets.EhLogo
 import exh.assets.ehassets.MangadexLogo
 import kotlinx.collections.immutable.persistentListOf
 import tachiyomi.i18n.MR
-import tachiyomi.i18n.kmk.KMR
 import tachiyomi.i18n.sy.SYMR
 import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.i18n.stringResource
@@ -190,7 +189,6 @@ object SettingsMainScreen : Screen() {
     private val tidyFilesHiddenScreens: Set<VoyagerScreen> = setOf(
         SettingsDownloadScreen,
         SettingsTrackingScreen,
-        SettingsConnectionScreen,
         SettingsEhScreen,
         SettingsMangadexScreen,
         SettingsDataScreen,
@@ -236,14 +234,6 @@ object SettingsMainScreen : Screen() {
             icon = Icons.Outlined.Sync,
             screen = SettingsTrackingScreen,
         ),
-        // AM (CONNECTIONS) -->
-        Item(
-            titleRes = KMR.strings.pref_category_connections,
-            subtitleRes = KMR.strings.pref_connections_summary,
-            icon = Icons.Outlined.Link,
-            screen = SettingsConnectionScreen,
-        ),
-        // <-- AM (CONNECTIONS)
         Item(
             titleRes = MR.strings.browse,
             subtitleRes = MR.strings.pref_browse_summary,

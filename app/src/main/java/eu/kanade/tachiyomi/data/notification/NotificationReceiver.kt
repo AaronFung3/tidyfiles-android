@@ -82,11 +82,6 @@ class NotificationReceiver : BroadcastReceiver() {
             // Cancel downloading app update
             ACTION_CANCEL_APP_UPDATE_DOWNLOAD -> cancelDownloadAppUpdate(context)
 
-            // KMK -->
-            // Stop Discord RPC service
-            ACTION_STOP_DISCORD_RPC -> stopDiscordRPC(context)
-            // <-- KMK
-
             // Open reader activity
             ACTION_OPEN_CHAPTER -> {
                 openChapter(
@@ -251,16 +246,6 @@ class NotificationReceiver : BroadcastReceiver() {
     }
 
     // KMK -->
-    /**
-     * Stop the Discord RPC service
-     *
-     * @param context context of application
-     */
-    private fun stopDiscordRPC(context: Context) {
-        val serviceIntent = Intent(context, eu.kanade.tachiyomi.data.connections.discord.DiscordRPCService::class.java)
-        context.stopService(serviceIntent)
-        context.cancelNotification(Notifications.ID_DISCORD_RPC)
-    }
     // <-- KMK
 
     companion object {
@@ -290,7 +275,6 @@ class NotificationReceiver : BroadcastReceiver() {
         private const val ACTION_DISMISS_NOTIFICATION = "$ID.$NAME.ACTION_DISMISS_NOTIFICATION"
 
         // KMK -->
-        private const val ACTION_STOP_DISCORD_RPC = "$ID.$NAME.STOP_DISCORD_RPC"
         // <-- KMK
 
         private const val EXTRA_URI = "$ID.$NAME.URI"
@@ -714,24 +698,5 @@ class NotificationReceiver : BroadcastReceiver() {
             )
         }
 
-        // KMK -->
-        /**
-         * Returns a [PendingIntent] that stops the Discord RPC service
-         *
-         * @param context context of application
-         * @return [PendingIntent]
-         */
-        internal fun stopDiscordRPCService(context: Context): PendingIntent {
-            val intent = Intent(context, NotificationReceiver::class.java).apply {
-                action = ACTION_STOP_DISCORD_RPC
-            }
-            return PendingIntent.getBroadcast(
-                context,
-                0,
-                intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-            )
-        }
-        // KMK <--
     }
 }

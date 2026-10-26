@@ -6,7 +6,6 @@ import androidx.core.app.NotificationManagerCompat.IMPORTANCE_DEFAULT
 import androidx.core.app.NotificationManagerCompat.IMPORTANCE_HIGH
 import androidx.core.app.NotificationManagerCompat.IMPORTANCE_LOW
 import eu.kanade.tachiyomi.R
-import eu.kanade.tachiyomi.data.connections.discord.RICH_PRESENCE_TAG
 import eu.kanade.tachiyomi.util.system.buildNotificationChannel
 import eu.kanade.tachiyomi.util.system.buildNotificationChannelGroup
 import tachiyomi.core.common.i18n.stringResource
@@ -74,14 +73,6 @@ object Notifications {
      */
     const val CHANNEL_INCOGNITO_MODE = "incognito_mode_channel"
     const val ID_INCOGNITO_MODE = -701
-
-    // AM (DISCORD) -->
-    /**
-     * Notification channel used for Discord RPC
-     */
-    const val CHANNEL_DISCORD_RPC = "${RICH_PRESENCE_TAG}_channel"
-    const val ID_DISCORD_RPC = -1701
-    // <-- AM (DISCORD)
 
     /**
      * Notification channel and ids used for app and extension updates.
@@ -197,11 +188,6 @@ object Notifications {
                     setGroup(GROUP_APK_UPDATES)
                     setName(context.stringResource(MR.strings.channel_ext_updates))
                 },
-                // AM (DISCORD) -->
-                buildNotificationChannel(CHANNEL_DISCORD_RPC, IMPORTANCE_LOW) {
-                    setName(context.getString(R.string.pref_discord_rpc))
-                },
-                // <-- AM (DISCORD)
                 // SY -->
                 buildNotificationChannel(CHANNEL_LIBRARY_EHENTAI, IMPORTANCE_LOW) {
                     setName("EHentai")
