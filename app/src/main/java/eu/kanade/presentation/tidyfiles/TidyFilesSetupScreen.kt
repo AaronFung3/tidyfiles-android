@@ -23,7 +23,9 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.tachiyomi.source.tidyfiles.TidyFilesSource
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -123,13 +125,15 @@ fun TidyFilesSetupScreen(
                     sourcePreferences.tidyFilesUrl().set(cleanUrl)
                     sourcePreferences.tidyFilesToken().set(cleanToken)
                     sourcePreferences.tidyFilesSetupDone().set(true)
-                    // 順手同步一次書庫，避免入到去見到空白
-                    runCatching {
-                        (Injekt.get<SourceManager>().get(TidyFilesSource.ID) as? TidyFilesSource)
-                            ?.getPopularManga(1)
-                    }
                     busy = false
+                    // 即刻放行：書庫同步交畀背景做，唔好卡住授權頁（同步 288 本要幾分鐘）
                     onDone()
+                    CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+                        runCatching {
+                            (Injekt.get<SourceManager>().get(TidyFilesSource.ID) as? TidyFilesSource)
+                                ?.getPopularManga(1)
+                        }
+                    }
                 }
             },
             enabled = !busy,

@@ -199,13 +199,8 @@ fun MangaChapterListItem(
                 }
             }
 
-            ChapterDownloadIndicator(
-                enabled = downloadIndicatorEnabled,
-                modifier = Modifier.padding(start = 4.dp),
-                downloadStateProvider = downloadStateProvider,
-                downloadProgressProvider = downloadProgressProvider,
-                onClick = { onDownloadClick?.invoke(it) },
-            )
+            // tidyFiles --> 下載功能未接（書留喺 PC），所以唔顯示章節下載掣
+            // tidyFiles <--
         }
     }
 }

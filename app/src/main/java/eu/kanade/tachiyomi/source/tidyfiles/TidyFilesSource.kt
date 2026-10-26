@@ -94,7 +94,7 @@ class TidyFilesSource(
     override suspend fun getPageList(chapter: SChapter): List<Page> {
         val rel = chapter.url
         if (rel.isEmpty()) return emptyList()
-        val json = fetchJson("/api/view/pages", listOf("rel" to rel))
+        val json = fetchJson("/api/view/pages", listOf("rel" to rel, "lib" to "1"))
         val count = json.optInt("n", 0)
         if (count <= 0) return emptyList()
         return List(count) { index -> Page(index, rel, pageUrl(rel, index)) }
