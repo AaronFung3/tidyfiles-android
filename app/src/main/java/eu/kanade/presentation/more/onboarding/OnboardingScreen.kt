@@ -35,7 +35,7 @@ fun OnboardingScreen(
     val steps = remember {
         listOf(
             ThemeStep(),
-            StorageStep(),
+            // tidyFiles --> 冇下載功能，唔再問「下載存放位置」（StorageStep）
             PermissionStep(),
             GuidesStep(onRestoreBackup = onRestoreBackup),
         )
