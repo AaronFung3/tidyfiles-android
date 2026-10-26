@@ -31,6 +31,8 @@ import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.source.online.MetadataSource
 import eu.kanade.tachiyomi.source.online.all.MergedSource
+import eu.kanade.tachiyomi.source.tidyfiles.TidyFilesApi
+import eu.kanade.tachiyomi.source.tidyfiles.TidyFilesSource
 import eu.kanade.tachiyomi.ui.reader.chapter.ReaderChapterItem
 import eu.kanade.tachiyomi.ui.reader.loader.ChapterLoader
 import eu.kanade.tachiyomi.ui.reader.loader.DownloadPageLoader
@@ -917,7 +919,22 @@ class ReaderViewModel @JvmOverloads constructor(
 
             upsertHistory.await(HistoryUpdate(chapterId, endTime, sessionReadDuration))
             chapterReadStartTime = null
+
+            // tidyFiles 來源：將「睇到邊頁／讀完」同步返 PC（fire-and-forget，
+            // 失敗靜靜吞咗 —— PC 端書架「繼續睇」條就會跟到手）
+            syncTidyFilesProgress(readerChapter)
         }
+    }
+
+    private fun syncTidyFilesProgress(readerChapter: ReaderChapter) {
+        if (manga?.source != TidyFilesSource.ID) return
+        val ch = readerChapter.chapter
+        TidyFilesApi.postProgressAsync(
+            rel = ch.url,
+            page = ch.last_page_read,
+            name = ch.name,
+            finished = ch.read,
+        )
     }
 
     /**

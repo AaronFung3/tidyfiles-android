@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import eu.kanade.domain.source.service.SourcePreferences
+import eu.kanade.tachiyomi.source.tidyfiles.TidyFilesApi
 import eu.kanade.tachiyomi.source.tidyfiles.TidyFilesSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -68,7 +69,8 @@ fun TidyFilesSetupScreen(
             style = MaterialTheme.typography.headlineSmall,
         )
         Text(
-            text = "要連上你自己的伺服器才可以使用。輸入地址同授權碼，驗證成功會自動載入內容。",
+            text = "要連上你自己的伺服器才可以使用。輸入地址同授權碼（電腦 UI 撳「配對手機」" +
+                "出嘅 6 位配對碼都收得），驗證成功會自動載入內容。",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -116,14 +118,25 @@ fun TidyFilesSetupScreen(
                 busy = true
                 error = null
                 scope.launch {
-                    val failure = verify(cleanUrl, cleanToken)
+                    // 6 位全數字 ＝ PC 端「配對手機」出嘅一次性配對碼：
+                    // 先去 PC 換真 token（5 分鐘內有效、用一次即死），再照舊驗證。
+                    val realToken = if (cleanToken.length == 6 && cleanToken.all(Char::isDigit)) {
+                        TidyFilesApi.pair(cleanUrl, cleanToken) ?: run {
+                            busy = false
+                            error = "配對碼換唔到（可能過咗 5 分鐘或者已經用咗）。喺電腦 UI 撳「配對手機」再攞過。"
+                            return@launch
+                        }
+                    } else {
+                        cleanToken
+                    }
+                    val failure = verify(cleanUrl, realToken)
                     if (failure != null) {
                         busy = false
                         error = failure
                         return@launch
                     }
                     sourcePreferences.tidyFilesUrl().set(cleanUrl)
-                    sourcePreferences.tidyFilesToken().set(cleanToken)
+                    sourcePreferences.tidyFilesToken().set(realToken)
                     sourcePreferences.tidyFilesSetupDone().set(true)
                     busy = false
                     // 即刻放行：書庫同步交畀背景做，唔好卡住授權頁（同步 288 本要幾分鐘）
