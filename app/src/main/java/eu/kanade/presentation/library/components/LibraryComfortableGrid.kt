@@ -29,6 +29,12 @@ internal fun LibraryComfortableGrid(
     groupItems: Boolean = false,
     // tidyFiles <--
 ) {
+    // tidyFiles -->
+    // remember() 只可以喺 @Composable context 叫，所以喺 LazyGridScope 之前算好
+    val tidyRows: List<LibraryRow> = remember(items, groupItems) {
+        if (groupItems) buildLibraryRows(items) else emptyList()
+    }
+    // tidyFiles <--
     LazyLibraryGrid(
         modifier = Modifier.fillMaxSize(),
         columns = columns,
@@ -38,9 +44,8 @@ internal fun LibraryComfortableGrid(
 
         // tidyFiles -->
         if (groupItems) {
-            val rows = remember(items) { buildLibraryRows(items) }
             items(
-                items = rows,
+                items = tidyRows,
                 span = { row ->
                     if (row is LibraryRow.Header) GridItemSpan(maxLineSpan) else GridItemSpan(1)
                 },
