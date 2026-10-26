@@ -28,6 +28,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.json.JSONObject
 import tachiyomi.domain.source.service.SourceManager
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
@@ -48,7 +49,7 @@ fun TidyFilesSetupScreen(
     val scope = rememberCoroutineScope()
     val sourcePreferences = remember { Injekt.get<SourcePreferences>() }
 
-    var url by remember { mutableStateOf(initialUrl.ifBlank { "http://192.168.50.163:8765" }) }
+    var url by remember { mutableStateOf(initialUrl.ifBlank { "http://100.78.220.22:8782" }) }
     var token by remember { mutableStateOf(initialToken) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -113,10 +114,10 @@ fun TidyFilesSetupScreen(
                 busy = true
                 error = null
                 scope.launch {
-                    val ok = verify(cleanUrl, cleanToken)
-                    if (!ok) {
+                    val failure = verify(cleanUrl, cleanToken)
+                    if (failure != null) {
                         busy = false
-                        error = "連唔到。檢查地址、授權碼，同埋兩邊係唔係同一個網絡。"
+                        error = failure
                         return@launch
                     }
                     sourcePreferences.tidyFilesUrl().set(cleanUrl)
@@ -145,11 +146,12 @@ fun TidyFilesSetupScreen(
     }
 }
 
-private suspend fun verify(url: String, token: String): Boolean = withContext(Dispatchers.IO) {
+/** 回傳 null = 驗證成功；否則回傳可以顯示畀人睇嘅錯誤原因。 */
+private suspend fun verify(url: String, token: String): String? = withContext(Dispatchers.IO) {
     runCatching {
         val client = OkHttpClient.Builder()
-            .connectTimeout(8, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(90, TimeUnit.SECONDS)
             .build()
         val request = Request.Builder()
             .url("$url/api/shelf?lib=1&k=${URLEncoder.encode(token, "UTF-8")}")
@@ -157,7 +159,16 @@ private suspend fun verify(url: String, token: String): Boolean = withContext(Di
             .header("User-Agent", "tidyFiles-android/1")
             .build()
         client.newCall(request).execute().use { response ->
-            response.isSuccessful && response.body?.string()?.contains("\"ok\":true") == true
+            val body = response.body?.string().orEmpty()
+            when {
+                // 伺服器用 Python json.dumps，會有 `{"ok": true, ...}` 嘅空格，所以一定要用 JSON parser 而唔係字串比對
+                !response.isSuccessful -> "伺服器回 HTTP ${response.code}。地址啱唔啱？授權碼啱唔啱？"
+                JSONObject(body).optBoolean("ok", false) -> null
+                else -> "伺服器有回應，但唔係預期嘅 tidyFiles 回應（可能係其他程式喺呢個端口）。"
+            }
         }
-    }.getOrDefault(false)
+    }.getOrElse { e ->
+        val reason = e.message ?: e::class.java.simpleName
+        "連唔到：$reason。檢查地址、端口，同埋兩邊係咪同一個網絡（Wi-Fi 或者 Tailscale）。"
+    }
 }
