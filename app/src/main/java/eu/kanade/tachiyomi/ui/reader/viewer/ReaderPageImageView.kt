@@ -483,11 +483,15 @@ open class ReaderPageImageView @JvmOverloads constructor(
             if (pageView === swapView) {
                 pageView = outgoingView
             }
-            // KMK: detach before recycling - recycling an attached SSIV nulls vTranslate and a
-            // subsequent draw pass crashes in sendStateChanged.
-            swapView.setOnStateChangedListener(null)
-            removeView(swapView)
-            swapView.recycle()
+            // tidyFiles --> 已脫離視窗就唔好再改子 view：切換顯示方式時拆 view 會撞 draw traversal
+            if (isAttachedToWindow) {
+                // KMK: detach before recycling - recycling an attached SSIV nulls vTranslate and a
+                // subsequent draw pass crashes in sendStateChanged.
+                swapView.setOnStateChangedListener(null)
+                removeView(swapView)
+                swapView.recycle()
+            }
+            // tidyFiles <--
         }
         outgoingView?.alpha = 1f
         outgoingView?.clipBounds = null
@@ -504,6 +508,13 @@ open class ReaderPageImageView @JvmOverloads constructor(
         processedSwapAnimator = null
 
         val swapView = processedSwapView ?: return
+        // tidyFiles --> 已脫離視窗就唔再改子 view，避免切換顯示方式時撞 draw traversal
+        if (!isAttachedToWindow) {
+            processedSwapView = null
+            outgoingProcessedView = null
+            return
+        }
+        // tidyFiles <--
         swapView.alpha = 1f
         swapView.clipBounds = null
         pageView = swapView

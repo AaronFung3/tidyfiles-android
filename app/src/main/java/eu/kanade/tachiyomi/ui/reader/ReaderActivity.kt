@@ -999,8 +999,11 @@ class ReaderActivity : BaseActivity() {
 
         // Destroy previous viewer if there was one
         if (prevViewer != null) {
-            prevViewer.destroy()
+            // tidyFiles --> 先脫離視窗再 destroy：destroy 會取消超分，取消回呼有機會改子 view，
+            // 喺 draw traversal 期間改子 view 會拋「ViewGroup contains null child」。
             binding.viewerContainer.removeAllViews()
+            prevViewer.destroy()
+            // tidyFiles <--
         }
         viewModel.onViewerLoaded(newViewer)
         updateViewerInset(readerPreferences.fullscreen().get(), readerPreferences.drawUnderCutout().get())
