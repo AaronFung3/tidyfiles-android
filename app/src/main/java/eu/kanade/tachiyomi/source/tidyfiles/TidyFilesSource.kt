@@ -146,7 +146,27 @@ class TidyFilesSource(
                 coverN = obj.optInt("cover_n", 0),
             )
         }
+        // 每次讀到 PC 書架就順手同步落本地書庫（內部 30 秒節流，唔會拖慢）
+        syncLibrary(out)
         return out
+    }
+
+    /** 把 PC 書架寫入本地書庫，並將 tag 變成分類 tab。 */
+    private suspend fun syncLibrary(items: List<ShelfItem>) {
+        if (items.isEmpty()) return
+        val series = items.groupBy { it.seriesKey }.map { (seriesKey, list) ->
+            val first = list.minByOrNull { if (it.number < 0f) Float.MAX_VALUE else it.number } ?: list.first()
+            val cover = list.maxByOrNull { it.coverN } ?: first
+            TidyFilesSeries(
+                key = seriesKey,
+                title = first.series,
+                author = first.author.ifEmpty { null },
+                tags = list.flatMap { it.tags }.distinct(),
+                description = buildDescription(first, list),
+                coverUrl = pageUrl(cover.rel, cover.coverN.coerceAtLeast(0)),
+            )
+        }
+        TidyFilesSync.sync(series, id)
     }
 
     private fun apiUrl(path: String, params: List<Pair<String, String>>): String {

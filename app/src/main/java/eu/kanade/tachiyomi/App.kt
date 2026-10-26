@@ -60,6 +60,8 @@ import eu.kanade.tachiyomi.di.AppModule
 import eu.kanade.tachiyomi.di.PreferenceModule
 import eu.kanade.tachiyomi.di.SYPreferenceModule
 import eu.kanade.tachiyomi.network.NetworkHelper
+import eu.kanade.tachiyomi.source.online.HttpSource
+import eu.kanade.tachiyomi.source.tidyfiles.TidyFilesSource
 import eu.kanade.tachiyomi.ui.base.delegate.SecureActivityDelegate
 import eu.kanade.tachiyomi.util.CrashLogUtil
 import eu.kanade.tachiyomi.util.system.DeviceUtil
@@ -79,6 +81,7 @@ import exh.log.xLogD
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.launch
 import logcat.AndroidLogcatLogger
 import logcat.LogPriority
 import logcat.LogcatLogger
@@ -91,6 +94,7 @@ import tachiyomi.core.common.preference.Preference
 import tachiyomi.core.common.preference.PreferenceStore
 import tachiyomi.core.common.util.system.ImageUtil
 import tachiyomi.core.common.util.system.logcat
+import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.storage.service.StorageManager
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.widget.WidgetManager
@@ -166,6 +170,16 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
 
         val scope = ProcessLifecycleOwner.get().lifecycleScope
+
+        // tidyFiles -->
+        // 開 app 就對一次 PC 書庫，令書櫃有名有分類（網絡未通就靜靜失敗）
+        scope.launch {
+            runCatching {
+                val tidySource = Injekt.get<SourceManager>().get(TidyFilesSource.ID) as? HttpSource
+                tidySource?.getPopularManga(1)
+            }.onFailure { logcat(LogPriority.WARN, it) { "tidyFiles 書庫同步失敗" } }
+        }
+        // tidyFiles <--
 
         // Show notification to disable Incognito Mode when it's enabled
         basePreferences.incognitoMode().changes()
