@@ -1,0 +1,28 @@
+name: Compile Check
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: compile-check
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  compile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version-file: .github/.java-version
+      - name: Set up gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Spotless + Kotlin compile
+        run: ./gradlew spotlessCheck :app:compileVielKotlin --stacktrace
