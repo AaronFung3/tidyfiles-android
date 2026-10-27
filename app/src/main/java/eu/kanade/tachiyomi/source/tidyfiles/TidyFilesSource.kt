@@ -164,6 +164,7 @@ class TidyFilesSource(
                 pages = obj.optInt("pages", 0),
                 coverN = obj.optInt("cover_n", 0),
                 mtime = obj.optLong("mtime", 0L),
+                addedAt = obj.optLong("added_at", 0L),
             )
         }
         shelfCache = out
@@ -186,8 +187,12 @@ class TidyFilesSource(
                 tags = list.flatMap { it.tags }.distinct(),
                 description = buildDescription(first, list),
                 coverUrl = pageUrl(cover.rel, cover.coverN.coerceAtLeast(0)),
-                // tidyFiles --> 用 PC 檔案日期（秒→毫秒）做加入日期
-                dateAdded = list.maxOfOrNull { it.mtime }?.takeIf { it > 0L }?.times(1000L) ?: 0L,
+                // tidyFiles --> 用「母本落地時間」做加入日期：ComicInfo TidyAddedAt
+                // （入庫時由 dump 母本寫入，係真正嘅下載時間）；舊書冇呢個欄
+                // 就退返 CBZ 檔案日期。（秒→毫秒）
+                dateAdded = list.maxOfOrNull {
+                    if (it.addedAt > 0L) it.addedAt else it.mtime
+                }?.takeIf { it > 0L }?.times(1000L) ?: 0L,
             )
         }
         TidyFilesSync.sync(series, id)
@@ -269,5 +274,6 @@ class TidyFilesSource(
         val pages: Int,
         val coverN: Int,
         val mtime: Long,
+        val addedAt: Long,
     )
 }
