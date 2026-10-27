@@ -93,6 +93,10 @@ class AppUpdateDownloadJob(private val context: Context, workerParams: WorkerPar
             return Result.failure()
         }
 
+        // tidyFiles --> 通知 app 內更新頁：而家開始落載
+        AppUpdateState.setDownloading(context)
+        // tidyFiles <--
+
         setForegroundSafely()
         // KMK -->
         instance = WeakReference(this)
@@ -193,8 +197,14 @@ class AppUpdateDownloadJob(private val context: Context, workerParams: WorkerPar
                 isStopped ||
                 (e is StreamResetException && e.errorCode == ErrorCode.CANCEL)
             if (shouldCancel) {
+                // tidyFiles --> 用戶自己取消：清走狀態，唔算失敗
+                AppUpdateState.clear(context)
+                // tidyFiles <--
                 notifier.cancel()
             } else {
+                // tidyFiles --> 落載失敗：app 內更新頁要識得顯示原因
+                AppUpdateState.setFailed(context, e.message)
+                // tidyFiles <--
                 notifier.onDownloadError(
                     url,
                     // KMK -->
@@ -234,6 +244,9 @@ class AppUpdateDownloadJob(private val context: Context, workerParams: WorkerPar
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
             )
             val statusReceiver = pendingIntent.intentSender
+            // tidyFiles --> 落載完成、交咗俾 PackageInstaller：app 內更新頁轉「安裝中」
+            AppUpdateState.setInstalling(context)
+            // tidyFiles <--
             session.commit(statusReceiver)
             notifier.onInstalling(file.getUriCompat(context))
             withContext(Dispatchers.IO) {
@@ -253,6 +266,9 @@ class AppUpdateDownloadJob(private val context: Context, workerParams: WorkerPar
         } catch (error: Exception) {
             // Either install package can't be found (probably bots) or there's a security exception
             // with the download manager. Nothing we can workaround.
+            // tidyFiles --> app 內更新頁要識得講返出咗咩事
+            AppUpdateState.setFailed(context, error.message)
+            // tidyFiles <--
             context.toast(error.message)
             notifier.cancelInstallNotification()
             notifier.promptInstall(file.getUriCompat(context))
