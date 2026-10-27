@@ -22,12 +22,10 @@ object MediaTekNpu {
         runCatching { System.loadLibrary("waifu2x-jni") }
     }
 
-    fun isDeviceSupported(): Boolean = Build.VERSION.SDK_INT >= 31 &&
-        Build.SUPPORTED_ABIS.firstOrNull() == "arm64-v8a" &&
-        (
-            Build.SOC_MANUFACTURER.contains("mediatek", ignoreCase = true) ||
-                Build.HARDWARE.startsWith("mt", ignoreCase = true)
-            )
+    /* A2 瘦身（2026-10-27）：litert-models 資產同 LiteRT runtime 已經割走，
+       MediaTek NPU 路徑冇咗模型就會喺 runtime 爆 —— 所以直接封死入口，
+       MediaTek 機一律行 Vulkan fallback。要恢復就 revert 這個 commit。 */
+    fun isDeviceSupported(): Boolean = false
 
     fun isActive(): Boolean = runCatching { nativeIsActive() }.getOrDefault(false)
 
