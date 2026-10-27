@@ -197,29 +197,6 @@ android {
                 "libsqlite3x",
             )
                 .map { "**/$it.so" }
-            // A2 瘦身（2026-10-27）：割走用唔到嘅超分 runtime ——
-            // - HTP skel/stub 淨係留 V73（8 Gen 3）＋ V81（8 Elite Gen 5）
-            //   （用戶兩部機嘅 SoC；其他晶片自動 fallback 去 Vulkan）
-            // - QNN DSP backend（libQnnDsp*）從來冇 backend 註冊，純死重
-            // - LiteRT／MediaTek NPU 全套（MediaTekNpu.isDeviceSupported()
-            //   已經封死；litert_backend.cpp 只喺 MediaTek 路徑先 dlopen）
-            excludes += setOf(
-                "**/libQnnHtpV68Skel.so",
-                "**/libQnnHtpV68Stub.so",
-                "**/libQnnHtpV69Skel.so",
-                "**/libQnnHtpV69Stub.so",
-                "**/libQnnHtpV75Skel.so",
-                "**/libQnnHtpV75Stub.so",
-                "**/libQnnHtpV79Skel.so",
-                "**/libQnnHtpV79Stub.so",
-                "**/libQnnDsp.so",
-                "**/libQnnDspV66Skel.so",
-                "**/libQnnDspV66Stub.so",
-                "**/libLiteRt.so",
-                "**/libLiteRtCompilerPlugin_MediaTek.so",
-                "**/libLiteRtDispatch_MediaTek.so",
-                "**/liblitert_jni.so",
-            )
         }
         resources {
             excludes += setOf(
@@ -293,8 +270,10 @@ dependencies {
     implementation(projects.i18nKmk)
     // Qualcomm QNN runtime libraries (libQnnHtp.so, HTP stub/skel libs) for the NPU backend.
     implementation("com.qualcomm.qti:qnn-runtime:2.49.0")
-    // LiteRT／MediaTek NPU runtime 已割走（A2 瘦身）：MediaTekNpu.isDeviceSupported()
-    // 封死咗，litert_backend.cpp 係 dlopen（編譯唔需要 AAR），litert-models 資產已刪。
+
+    // LiteRT runtime + MediaTek NeuroPilot dispatch for the MediaTek NPU backend.
+    implementation("com.google.ai.edge.litert:litert:2.3.0")
+    implementation("com.google.ai.edge.litert:litert-npu-runtime-mediatek:2.3.0")
     // KMK <--
     // SY -->
     implementation(projects.i18nSy)
