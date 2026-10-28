@@ -23,6 +23,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import eu.kanade.tachiyomi.source.tidyfiles.TidyFilesApi
+import eu.kanade.tachiyomi.source.tidyfiles.TidyFilesTagKind
 import kotlinx.coroutines.launch
 
 /**
@@ -49,7 +50,8 @@ fun TidyFilesManageDialog(
 
     var name by remember { mutableStateOf(title) }
     var coverPage by remember { mutableStateOf("0") }
-    var tagsText by remember { mutableStateOf(tags.joinToString("、")) }
+    // 只 prefill 手打 tag（「作者：」「品質：」嗰啲住喺 ComicInfo，唔關呢個編輯器事）
+    var tagsText by remember { mutableStateOf(TidyFilesTagKind.handTagsOf(tags).joinToString("、")) }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
 

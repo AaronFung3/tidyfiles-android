@@ -47,4 +47,11 @@ object TidyFilesTagKind {
     /** 呢本書喺呢個分類入面有冇 `value`。 */
     fun matches(genres: List<String>?, kind: String, value: String): Boolean =
         valuesOf(genres, kind).any { it == value }
+
+    /**
+     * 手打 tag：剔除「作者：」「品質：」前綴（嗰啲係整理 app 寫入 ComicInfo 嘅，
+     * 手機 tag 編輯器只可以管 booktags.json 嗰批手打 tag，唔好碰 ComicInfo）。
+     */
+    fun handTagsOf(genres: List<String>?): List<String> =
+        (genres ?: emptyList()).filter { kindOf(it) != AUTHOR && kindOf(it) != QUALITY }
 }
