@@ -45,7 +45,8 @@ class TidyFilesSource(
     override val id: Long = ID
     override val name: String = NAME
     override val lang: String = "zh"
-    override val supportsLatest: Boolean = false
+    // 「最新」＝按 PC 嘅加入日期排（ComicInfo TidyAddedAt），新入嘅書一眼見到
+    override val supportsLatest: Boolean = true
     override val supportsRelatedMangas: Boolean = false
 
     override val baseUrl: String
@@ -69,7 +70,15 @@ class TidyFilesSource(
         return MangasPage(groupBySeries(fetchShelf(force = true)), false)
     }
 
-    override suspend fun getLatestUpdates(page: Int): MangasPage = getPopularManga(page)
+    /** 「最新」：同一批書，改按 PC 加入日期排（新入嘅排先）。 */
+    override suspend fun getLatestUpdates(page: Int): MangasPage {
+        if (page > 1) return MangasPage(emptyList(), false)
+        val grouped = fetchShelf(force = true).groupBy { it.seriesKey }
+        val sorted = grouped.values
+            .sortedByDescending { items -> items.maxOf { if (it.addedAt > 0L) it.addedAt else it.mtime } }
+            .mapNotNull { groupBySeries(it).firstOrNull() }
+        return MangasPage(sorted, false)
+    }
 
     override suspend fun getSearchManga(page: Int, query: String, filters: FilterList): MangasPage {
         if (page > 1) return MangasPage(emptyList(), false)
@@ -165,6 +174,10 @@ class TidyFilesSource(
                 coverN = obj.optInt("cover_n", 0),
                 mtime = obj.optLong("mtime", 0L),
                 addedAt = obj.optLong("added_at", 0L),
+                // PC 端書簽（reader.json）：反向同步讀書狀態用
+                progressPage = obj.optInt("progress_page", 0),
+                finished = obj.optBoolean("finished", false),
+                error = obj.optString("error"),
             )
         }
         shelfCache = out
@@ -186,13 +199,15 @@ class TidyFilesSource(
                 author = first.author.ifEmpty { null },
                 tags = list.flatMap { it.tags }.distinct(),
                 description = buildDescription(first, list),
-                coverUrl = pageUrl(cover.rel, cover.coverN.coerceAtLeast(0)),
+                coverUrl = thumbUrl(cover.rel, cover.coverN, cover.mtime),
                 // tidyFiles --> 用「母本落地時間」做加入日期：ComicInfo TidyAddedAt
                 // （入庫時由 dump 母本寫入，係真正嘅下載時間）；舊書冇呢個欄
                 // 就退返 CBZ 檔案日期。（秒→毫秒）
                 dateAdded = list.maxOfOrNull {
                     if (it.addedAt > 0L) it.addedAt else it.mtime
                 }?.takeIf { it > 0L }?.times(1000L) ?: 0L,
+                // tidyFiles --> PC 端書簽一齊交俾 sync，反向同步「已讀／睇到邊頁」
+                progress = list.map { TidyFilesChapterProgress(it.rel, it.finished, it.progressPage) },
             )
         }
         TidyFilesSync.sync(series, id)
@@ -214,6 +229,22 @@ class TidyFilesSource(
             "rel" to rel,
             "n" to index.toString(),
             "hd" to "0",
+            "lib" to "1",
+        ),
+    )
+
+    /**
+     * 封面用 PC 嘅縮圖 endpoint（`/api/view/thumb`）：唔好拉原頁全圖（實測一張
+     * 813 KB）做書櫃封面。`size` 交 PC 縮成細 JPEG，`v=mtime` 令 PC 回一年
+     * immutable cache —— 書冇換過就唔使再拉。
+     */
+    private fun thumbUrl(rel: String, coverN: Int, mtime: Long): String = apiUrl(
+        "/api/view/thumb",
+        listOf(
+            "rel" to rel,
+            "n" to coverN.coerceAtLeast(0).toString(),
+            "size" to "600",
+            "v" to mtime.toString(),
             "lib" to "1",
         ),
     )
@@ -242,7 +273,7 @@ class TidyFilesSource(
             genre = first.tags.joinToString(", ").ifEmpty { null }
             status = SManga.UNKNOWN
             description = buildDescription(first, items)
-            thumbnail_url = pageUrl(cover.rel, cover.coverN.coerceAtLeast(0))
+            thumbnail_url = thumbUrl(cover.rel, cover.coverN, cover.mtime)
             initialized = true
         }
     }
@@ -260,6 +291,10 @@ class TidyFilesSource(
         appendLine("章節：${items.size}")
         if (first.author.isNotEmpty()) appendLine("作者：${first.author}")
         if (first.tags.isNotEmpty()) appendLine("Tag：${first.tags.joinToString("、")}")
+        // tidyFiles --> PC 體檢讀唔開嘅書（壞 ZIP 之類）：喺詳情度直接見到
+        items.firstOrNull { it.error.isNotEmpty() }?.let { bad ->
+            appendLine("⚠️ 檔案異常：${bad.error}（${bad.name}）")
+        }
         append("（PC 書庫串流，手機不佔空間）")
     }
 
@@ -275,5 +310,8 @@ class TidyFilesSource(
         val coverN: Int,
         val mtime: Long,
         val addedAt: Long,
+        val progressPage: Int = 0,
+        val finished: Boolean = false,
+        val error: String = "",
     )
 }

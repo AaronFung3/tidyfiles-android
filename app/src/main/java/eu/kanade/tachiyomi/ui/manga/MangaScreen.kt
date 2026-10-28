@@ -58,6 +58,7 @@ import eu.kanade.presentation.manga.components.ScanlatorFilterDialog
 import eu.kanade.presentation.manga.components.SetIntervalDialog
 import eu.kanade.presentation.more.settings.screen.SettingsEhScreen
 import eu.kanade.presentation.theme.TachiyomiTheme
+import eu.kanade.presentation.tidyfiles.TidyFilesManageDialog
 import eu.kanade.presentation.util.AssistContentScreen
 import eu.kanade.presentation.util.Screen
 import eu.kanade.presentation.util.isTabletUi
@@ -65,6 +66,7 @@ import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.isLocalOrStub
 import eu.kanade.tachiyomi.source.online.HttpSource
+import eu.kanade.tachiyomi.source.tidyfiles.TidyFilesSource
 import eu.kanade.tachiyomi.ui.browse.BulkFavoriteScreenModel
 import eu.kanade.tachiyomi.ui.browse.extension.ExtensionsScreen
 import eu.kanade.tachiyomi.ui.browse.extension.details.SourcePreferencesScreen
@@ -377,6 +379,10 @@ class MangaScreen(
                 )
             },
             onEditInfoClicked = screenModel::showEditMangaInfoDialog,
+            // tidyFiles --> PC 書庫管理：只限 tidyFiles 來源、冇 merge 嘅書
+            onTidyFilesManageClicked = screenModel::showTidyFilesManageDialog.takeIf {
+                successState.source is TidyFilesSource && successState.mergedData == null
+            },
             // tidyFiles --> 推薦功能已移除
             onRecommendClicked = {},
             onMergedSettingsClicked = screenModel::showEditMergedSettingsDialog,
@@ -640,6 +646,16 @@ class MangaScreen(
                 )
             }
             // KMK <--
+            // tidyFiles --> PC 書庫管理（改書名／揀封面頁／手打 tag）
+            is MangaScreenModel.Dialog.TidyFilesManage -> {
+                TidyFilesManageDialog(
+                    rel = dialog.rel,
+                    title = dialog.title,
+                    tags = dialog.tags,
+                    onDismissRequest = screenModel::dismissDialog,
+                )
+            }
+            // tidyFiles <--
         }
 
         if (showScanlatorsDialog) {

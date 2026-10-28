@@ -78,4 +78,44 @@ object TidyFilesApi {
             }
         }.getOrNull()
     }
+
+    // ---- PC 書庫管理（由書本詳情頁嘅「PC 書庫管理」彈窗用）--------------------
+    //
+    // PC 端三個 endpoint 本來就准手機 call（同書簽一樣只過 token）：
+    //   · /api/shelf/rename  改書內 ComicInfo <Series> ＋ folder／檔名
+    //   · /api/shelf/cover   揀第幾頁做封面（只寫 <書庫>\.tidy\covers.json）
+    //   · /api/view/tags     手打 tag（只寫 <work>\booktags.json）
+
+    /** PC 端回 ok=true 就算成功；否則回 PC 畀嘅錯誤字串（或者 HTTP 碼）。 */
+    private suspend fun post(path: String, body: JSONObject): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val prefs = Injekt.get<SourcePreferences>()
+            val base = prefs.tidyFilesUrl().get().trim().trimEnd('/')
+            val token = prefs.tidyFilesToken().get().trim()
+            if (base.isBlank() || token.isBlank()) throw Exception("未設定伺服器／授權碼")
+            val request = Request.Builder()
+                .url("$base$path")
+                .header("X-Token", token)
+                .header("User-Agent", "tidyFiles-android/1")
+                .post(body.toString().toRequestBody(jsonType))
+                .build()
+            client().newCall(request).execute().use { response ->
+                val obj = JSONObject(response.body?.string().orEmpty().ifBlank { "{}" })
+                if (response.isSuccessful && obj.optBoolean("ok", false)) return@use
+                throw Exception(obj.optString("error").ifBlank { "HTTP ${response.code}" })
+            }
+        }.map { }
+    }
+
+    /** 改書名（PC 端會改 ComicInfo <Series> ＋ folder／檔名）。 */
+    suspend fun rename(rel: String, name: String): Result<Unit> =
+        post("/api/shelf/rename", JSONObject().put("rel", rel).put("name", name))
+
+    /** 揀第 N 頁做封面（0 ＝ 第一頁）。 */
+    suspend fun setCover(rel: String, page: Int): Result<Unit> =
+        post("/api/shelf/cover", JSONObject().put("rel", rel).put("page", page))
+
+    /** 手打 tag（整組取代；`tags` 空清單 ＝ 清走呢本書嘅手打 tag）。 */
+    suspend fun setTags(rel: String, tags: List<String>): Result<Unit> =
+        post("/api/view/tags", JSONObject().put("rel", rel).put("tags", org.json.JSONArray(tags)))
 }

@@ -853,6 +853,10 @@ class ReaderViewModel @JvmOverloads constructor(
                 ),
             )
 
+            // tidyFiles --> 閱讀中途都同步進度返 PC（節流 30 秒，睇到一半收機都跟到）
+            maybeSyncTidyFilesProgress(readerChapter)
+            // tidyFiles <--
+
             // SY -->
             // Check if syncing is enabled for chapter open:
             if (isSyncEnabled && syncTriggerOpt.syncOnChapterOpen && readerChapter.chapter.last_page_read == 0) {
@@ -864,6 +868,11 @@ class ReaderViewModel @JvmOverloads constructor(
 
     private suspend fun updateChapterProgressOnComplete(readerChapter: ReaderChapter) {
         readerChapter.chapter.read = true
+
+        // tidyFiles --> 讀完一卷即刻同步（唔等節流），PC 書架「讀完」標記跟到
+        maybeSyncTidyFilesProgress(readerChapter, force = true)
+        // tidyFiles <--
+
         // SY -->
         if (manga?.isEhBasedManga() == true) {
             viewModelScope.launchNonCancellable {
@@ -936,6 +945,27 @@ class ReaderViewModel @JvmOverloads constructor(
             finished = ch.read,
         )
     }
+
+    // tidyFiles --> 閱讀中途（換頁）都同步進度返 PC，但同一卷 30 秒內唔會重複送；
+    // force（讀完一卷／退出 reader）就即刻送。睇到一半收機／殺 app，PC 都跟到進度。
+    private var lastTidyProgressRel: String? = null
+    private var lastTidyProgressAt = 0L
+
+    private fun maybeSyncTidyFilesProgress(readerChapter: ReaderChapter, force: Boolean = false) {
+        if (manga?.source != TidyFilesSource.ID) return
+        val ch = readerChapter.chapter
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (!force && ch.url == lastTidyProgressRel && now - lastTidyProgressAt < 30_000L) return
+        lastTidyProgressRel = ch.url
+        lastTidyProgressAt = now
+        TidyFilesApi.postProgressAsync(
+            rel = ch.url,
+            page = ch.last_page_read,
+            name = ch.name,
+            finished = ch.read,
+        )
+    }
+    // tidyFiles <--
 
     /**
      * Called from the activity to load and set the next chapter as active.

@@ -1905,6 +1905,14 @@ class MangaScreenModel(
         data object ClearManga : Dialog
         // KMK <--
 
+        // tidyFiles --> PC 書庫管理（改書名／揀封面頁／手打 tag，直接寫返 PC）
+        data class TidyFilesManage(
+            val rel: String,
+            val title: String,
+            val tags: List<String>,
+        ) : Dialog
+        // tidyFiles <--
+
         data object SettingsSheet : Dialog
         data object TrackSheet : Dialog
         data object FullCover : Dialog
@@ -1929,6 +1937,19 @@ class MangaScreenModel(
     fun showCoverDialog() {
         updateSuccessState { it.copy(dialog = Dialog.FullCover) }
     }
+
+    // tidyFiles --> PC 書庫管理：用第一卷嘅 rel 做錨點（tag／封面係一本書粒度）
+    fun showTidyFilesManageDialog() {
+        val state = successState ?: return
+        val rel = state.chapters
+            .minByOrNull { it.chapter.sourceOrder }
+            ?.chapter?.url
+            ?: return
+        updateSuccessState {
+            it.copy(dialog = Dialog.TidyFilesManage(rel, it.manga.title, it.manga.genre.orEmpty()))
+        }
+    }
+    // tidyFiles <--
 
     fun showMigrateDialog(duplicate: Manga) {
         val manga = successState?.manga ?: return

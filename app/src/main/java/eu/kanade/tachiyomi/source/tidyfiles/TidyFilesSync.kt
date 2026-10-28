@@ -9,6 +9,8 @@ import kotlinx.coroutines.withContext
 import mihon.domain.source.interactor.UpdateMangaFromRemote
 import tachiyomi.domain.category.model.Category
 import tachiyomi.domain.category.repository.CategoryRepository
+import tachiyomi.domain.chapter.model.ChapterUpdate
+import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.model.MangaUpdate
 import tachiyomi.domain.manga.repository.MangaRepository
@@ -25,6 +27,15 @@ data class TidyFilesSeries(
     val coverUrl: String?,
     /** PC 檔案日期（epoch 毫秒，0 = 冇）→ 做「加入書櫃日期」。 */
     val dateAdded: Long = 0L,
+    /** PC 端書簽（reader.json）：反向同步「已讀／睇到邊頁」用。 */
+    val progress: List<TidyFilesChapterProgress> = emptyList(),
+)
+
+/** 一卷嘅 PC 端書簽：`rel` 係章節 url（同本地章節一對一）。 */
+data class TidyFilesChapterProgress(
+    val rel: String,
+    val finished: Boolean,
+    val progressPage: Int,
 )
 
 /**
@@ -32,6 +43,8 @@ data class TidyFilesSeries(
  *
  * - PC 係唯一真相來源：每次同步都會重設每本書嘅分類（跟 PC 上嘅 tag）
  * - 已經喺書庫嘅書唔會重複插入，亦唔會改你手動改過嘅資料
+ * - 讀書狀態雙向：PC 睇過／睇到一半嘅卷會同步落本地章節
+ *   （只會前進唔會後退：唔會清走本地已讀，唔會縮細 last_page_read）
  * - 失敗只記 log，唔會阻住書架／瀏覽
  */
 object TidyFilesSync {
@@ -63,6 +76,7 @@ object TidyFilesSync {
     private suspend fun runSync(series: List<TidyFilesSeries>, sourceId: Long) {
         val mangaRepository = Injekt.get<MangaRepository>()
         val categoryRepository = Injekt.get<CategoryRepository>()
+        val chapterRepository = Injekt.get<ChapterRepository>()
 
         val categoryByName = categoryRepository.getAll()
             .associateBy { it.name.lowercase() }
@@ -71,6 +85,7 @@ object TidyFilesSync {
         val timestamp = System.currentTimeMillis()
 
         var categorised = 0
+        var progressSynced = 0
         val newlyAdded = mutableListOf<Manga>()
 
         series.forEach { item ->
@@ -88,6 +103,31 @@ object TidyFilesSync {
             // tidyFiles --> 用 PC 檔案日期做「加入書櫃日期」，已存在嘅書都會校正
             if (existing != null && item.dateAdded > 0L && item.dateAdded != manga.dateAdded) {
                 mangaRepository.update(MangaUpdate(id = manga.id, dateAdded = item.dateAdded))
+            }
+            // tidyFiles <--
+
+            // tidyFiles --> 反向同步讀書狀態：PC 睇過嘅，手機書櫃都要知。
+            // 規矩：只會「前進」唔會「後退」——
+            //   · PC 話 finished → 標記已讀（唔會反過來清走本地已讀）
+            //   · PC 睇到第 N 頁 → 本地 last_page_read 只有喺 N 更大先更新
+            //     （手機睇得更遠、或者未 sync 返 PC 嗰陣，唔會被舊資料蓋走）
+            if (item.progress.isNotEmpty()) {
+                val pcByRel = item.progress.associateBy { it.rel }
+                val updates = chapterRepository.getChapterByMangaId(manga.id)
+                    .mapNotNull { ch ->
+                        val pc = pcByRel[ch.url] ?: return@mapNotNull null
+                        when {
+                            pc.finished && !ch.read ->
+                                ChapterUpdate(id = ch.id, read = true)
+                            !ch.read && pc.progressPage > 0 && ch.lastPageRead < pc.progressPage ->
+                                ChapterUpdate(id = ch.id, lastPageRead = pc.progressPage.toLong())
+                            else -> null
+                        }
+                    }
+                if (updates.isNotEmpty()) {
+                    chapterRepository.updateAll(updates)
+                    progressSynced += updates.size
+                }
             }
             // tidyFiles <--
 
@@ -129,8 +169,12 @@ object TidyFilesSync {
             }
         }
 
-        if (newlyAdded.isNotEmpty() || categorised > 0) {
-            Log.i(TAG, "同步完成：新增 ${newlyAdded.size} 本，重設分類 $categorised 本")
+        if (newlyAdded.isNotEmpty() || categorised > 0 || progressSynced > 0) {
+            Log.i(
+                TAG,
+                "同步完成：新增 ${newlyAdded.size} 本，重設分類 $categorised 本，" +
+                    "讀書狀態跟 PC 更新 $progressSynced 卷",
+            )
         }
     }
 

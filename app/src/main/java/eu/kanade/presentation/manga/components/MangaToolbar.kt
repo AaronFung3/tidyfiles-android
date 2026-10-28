@@ -44,6 +44,9 @@ fun MangaToolbar(
     onClickEditNotes: () -> Unit,
     // SY -->
     onClickEditInfo: (() -> Unit)?,
+    // tidyFiles --> PC 書庫管理（tidyFiles 來源先有）
+    onClickTidyFilesManage: (() -> Unit)?,
+    // tidyFiles <--
     // KMK -->
     onClickRelatedMangas: (() -> Unit)?,
     onClickSourceSettings: (() -> Unit)?,
@@ -182,6 +185,16 @@ fun MangaToolbar(
                             ),
                         )
                     }
+                    // tidyFiles --> PC 書庫管理（改書名／揀封面頁／手打 tag）
+                    if (onClickTidyFilesManage != null) {
+                        add(
+                            AppBar.OverflowAction(
+                                title = "PC 書庫管理",
+                                onClick = onClickTidyFilesManage,
+                            ),
+                        )
+                    }
+                    // tidyFiles <--
                     // KMK -->
                     if (onClickRelatedMangas != null) {
                         add(

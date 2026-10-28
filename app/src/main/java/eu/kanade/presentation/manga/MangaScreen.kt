@@ -168,6 +168,9 @@ fun MangaScreen(
     onEditFetchIntervalClicked: (() -> Unit)?,
     onMigrateClicked: (() -> Unit)?,
     onEditNotesClicked: () -> Unit,
+    // tidyFiles --> PC 書庫管理（tidyFiles 來源先有；null ＝ 唔顯示）
+    onTidyFilesManageClicked: (() -> Unit)? = null,
+    // tidyFiles <--
     // SY -->
     onMetadataViewerClicked: () -> Unit,
     onEditInfoClicked: () -> Unit,
@@ -247,6 +250,7 @@ fun MangaScreen(
             // SY -->
             onMetadataViewerClicked = onMetadataViewerClicked,
             onEditInfoClicked = onEditInfoClicked,
+            onTidyFilesManageClicked = onTidyFilesManageClicked,
             onRecommendClicked = onRecommendClicked,
             onMergedSettingsClicked = onMergedSettingsClicked,
             onMergeClicked = onMergeClicked,
@@ -309,6 +313,7 @@ fun MangaScreen(
             // SY -->
             onMetadataViewerClicked = onMetadataViewerClicked,
             onEditInfoClicked = onEditInfoClicked,
+            onTidyFilesManageClicked = onTidyFilesManageClicked,
             onRecommendClicked = onRecommendClicked,
             onMergedSettingsClicked = onMergedSettingsClicked,
             onMergeClicked = onMergeClicked,
@@ -378,6 +383,9 @@ private fun MangaScreenSmallImpl(
     onEditIntervalClicked: (() -> Unit)?,
     onMigrateClicked: (() -> Unit)?,
     onEditNotesClicked: () -> Unit,
+    // tidyFiles --> PC 書庫管理（tidyFiles 來源先有；null ＝ 唔顯示）
+    onTidyFilesManageClicked: (() -> Unit)? = null,
+    // tidyFiles <--
     // SY -->
     onMetadataViewerClicked: () -> Unit,
     onEditInfoClicked: () -> Unit,
@@ -485,6 +493,7 @@ private fun MangaScreenSmallImpl(
                 onClickEditNotes = onEditNotesClicked,
                 // SY -->
                 onClickEditInfo = onEditInfoClicked.takeIf { state.manga.favorite },
+                onClickTidyFilesManage = onTidyFilesManageClicked,
                 // KMK -->
                 onClickSourceSettings = onClickSourceSettingsClicked,
                 onClearManga = onClearManga,
@@ -839,6 +848,9 @@ private fun MangaScreenLargeImpl(
     onEditIntervalClicked: (() -> Unit)?,
     onMigrateClicked: (() -> Unit)?,
     onEditNotesClicked: () -> Unit,
+    // tidyFiles --> PC 書庫管理（tidyFiles 來源先有；null ＝ 唔顯示）
+    onTidyFilesManageClicked: (() -> Unit)? = null,
+    // tidyFiles <--
     // SY -->
     onMetadataViewerClicked: () -> Unit,
     onEditInfoClicked: () -> Unit,
@@ -938,6 +950,7 @@ private fun MangaScreenLargeImpl(
                 onCancelActionMode = { onAllChapterSelected(false) },
                 // SY -->
                 onClickEditInfo = onEditInfoClicked.takeIf { state.manga.favorite },
+                onClickTidyFilesManage = onTidyFilesManageClicked,
                 // KMK -->
                 onClickSourceSettings = onClickSourceSettingsClicked,
                 onClearManga = onClearManga,
