@@ -911,4 +911,6 @@
     <string name="extensionStoresScreen.deleteStore.title">刪除擴充套件商店</string>
     <string name="extensionStoresScreen.deleteStore.body">你是否要刪除擴充套件商店「%1$s」(%2$s)？</string>
     <string name="pref_webtoon_vertical_navigator_on_left">將垂直導航器設於左側</string>
+    <string name="action_merge_with_next_page">合併下一頁</string>
+    <string name="action_unmerge_with_next_page">取消合併</string>
 </resources>

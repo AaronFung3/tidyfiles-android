@@ -251,6 +251,10 @@ class ReaderPreferences(
 
     fun invertDoublePages() = preferenceStore.getBoolean("invert_double_pages", false)
 
+    // 畫格 --> 逐頁「同下一頁合併」標記，格式 "mangaId:chapterId:pageIndex"
+    fun mergePages() = preferenceStore.getStringSet("pref_merge_pages", emptySet())
+    // 畫格 <--
+
     fun centerMarginType() = preferenceStore.getInt("center_margin_type", PagerConfig.CenterMarginType.NONE)
 
     fun archiveReaderMode() = preferenceStore.getInt("archive_reader_mode", ArchiveReaderMode.LOAD_FROM_FILE)

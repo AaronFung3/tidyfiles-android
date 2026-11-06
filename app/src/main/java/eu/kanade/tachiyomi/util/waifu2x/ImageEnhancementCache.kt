@@ -11,7 +11,10 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import okio.Buffer
 import java.io.File
@@ -27,6 +30,29 @@ import kotlin.concurrent.write
  */
 object ImageEnhancementCache {
     private const val CACHE_DIR_NAME = "realcugan_cache"
+
+    // 畫格 --> 頁碼旁「已 HD」小點：記住而家呢一章邊幾頁已經有超分成品。
+    // 只係 UI 提示用，唔影響 cache 本身；換章節之後第一次 mark 會自動重置。
+    data class HdMarks(
+        val mangaId: Long = -1L,
+        val chapterId: Long = -1L,
+        val pages: Set<Int> = emptySet(),
+    )
+
+    private val _hdMarks = MutableStateFlow(HdMarks())
+    val hdMarks: StateFlow<HdMarks> = _hdMarks.asStateFlow()
+
+    fun markHd(mangaId: Long, chapterId: Long, pageIndex: Int) {
+        if (mangaId <= 0L || chapterId <= 0L || pageIndex < 0) return
+        val cur = _hdMarks.value
+        if (cur.mangaId == mangaId && cur.chapterId == chapterId) {
+            if (pageIndex in cur.pages) return
+            _hdMarks.value = cur.copy(pages = cur.pages + pageIndex)
+        } else {
+            _hdMarks.value = HdMarks(mangaId, chapterId, setOf(pageIndex))
+        }
+    }
+    // 畫格 <--
 
     // KMK -->
     // Input decoding now preserves source resolution before enhancement.

@@ -2,6 +2,7 @@ package eu.kanade.presentation.library.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.outlined.Label
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
@@ -85,6 +87,9 @@ fun MangaCompactGridItem(
     coverAlpha: Float = 1f,
     coverBadgeStart: @Composable (RowScope.() -> Unit)? = null,
     coverBadgeEnd: @Composable (RowScope.() -> Unit)? = null,
+    // tidyFiles --> 書櫃每格直接加標籤（唔使入詳情頁撳 3 點）
+    onClickAddToCategory: (() -> Unit)? = null,
+    // tidyFiles <--
     // KMK -->
     libraryColored: Boolean = true,
     // KMK <--
@@ -132,16 +137,30 @@ fun MangaCompactGridItem(
                     CoverTextOverlay(
                         title = title,
                         onClickContinueReading = onClickContinueReading,
+                        onClickAddToCategory = onClickAddToCategory,
                     )
-                } else if (onClickContinueReading != null) {
-                    ContinueReadingButton(
-                        size = ContinueReadingButtonSizeLarge,
-                        iconSize = ContinueReadingButtonIconSizeLarge,
-                        onClick = onClickContinueReading,
+                } else if (onClickContinueReading != null || onClickAddToCategory != null) {
+                    Row(
                         modifier = Modifier
                             .padding(ContinueReadingButtonGridPadding)
                             .align(Alignment.BottomEnd),
-                    )
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        if (onClickAddToCategory != null) {
+                            TagButton(
+                                size = ContinueReadingButtonSizeLarge,
+                                iconSize = ContinueReadingButtonIconSizeLarge,
+                                onClick = onClickAddToCategory,
+                            )
+                        }
+                        if (onClickContinueReading != null) {
+                            ContinueReadingButton(
+                                size = ContinueReadingButtonSizeLarge,
+                                iconSize = ContinueReadingButtonIconSizeLarge,
+                                onClick = onClickContinueReading,
+                            )
+                        }
+                    }
                 }
             },
         )
@@ -155,6 +174,9 @@ fun MangaCompactGridItem(
 private fun BoxScope.CoverTextOverlay(
     title: String,
     onClickContinueReading: (() -> Unit)? = null,
+    // tidyFiles --> 直接加標籤
+    onClickAddToCategory: (() -> Unit)? = null,
+    // tidyFiles <--
 ) {
     Box(
         modifier = Modifier
@@ -187,6 +209,17 @@ private fun BoxScope.CoverTextOverlay(
             ),
             minLines = 1,
         )
+        if (onClickAddToCategory != null) {
+            TagButton(
+                size = ContinueReadingButtonSizeSmall,
+                iconSize = ContinueReadingButtonIconSizeSmall,
+                onClick = onClickAddToCategory,
+                modifier = Modifier.padding(
+                    end = 4.dp,
+                    bottom = ContinueReadingButtonGridPadding,
+                ),
+            )
+        }
         if (onClickContinueReading != null) {
             ContinueReadingButton(
                 size = ContinueReadingButtonSizeSmall,
@@ -440,6 +473,9 @@ fun MangaListItem(
     // KMK -->
     libraryColored: Boolean = true,
     // KMK <--
+    // tidyFiles --> 直接加標籤
+    onClickAddToCategory: (() -> Unit)? = null,
+    // tidyFiles <--
 ) {
     // KMK -->
     val bgColor = coverData.dominantCoverColors?.first?.let { Color(it) }.takeIf { libraryColored }
@@ -491,6 +527,14 @@ fun MangaListItem(
             style = MaterialTheme.typography.bodyMedium,
         )
         BadgeGroup(content = badge)
+        if (onClickAddToCategory != null) {
+            TagButton(
+                size = ContinueReadingButtonSizeSmall,
+                iconSize = ContinueReadingButtonIconSizeSmall,
+                onClick = onClickAddToCategory,
+                modifier = Modifier.padding(start = ContinueReadingButtonListSpacing),
+            )
+        }
         if (onClickContinueReading != null) {
             ContinueReadingButton(
                 size = ContinueReadingButtonSizeSmall,
@@ -527,3 +571,29 @@ private fun ContinueReadingButton(
         }
     }
 }
+
+// tidyFiles --> 書櫃項目嘅「加標籤」掣（直接開分類對話框，唔使入詳情頁撳 3 點）
+@Composable
+private fun TagButton(
+    size: Dp,
+    iconSize: Dp,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    FilledIconButton(
+        onClick = onClick,
+        shape = MaterialTheme.shapes.small,
+        colors = IconButtonDefaults.filledIconButtonColors(
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        ),
+        modifier = modifier.size(size),
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.Label,
+            contentDescription = stringResource(MR.strings.action_edit_categories),
+            modifier = Modifier.size(iconSize),
+        )
+    }
+}
+// tidyFiles <--

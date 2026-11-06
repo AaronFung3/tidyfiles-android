@@ -367,6 +367,9 @@ data object LibraryTab : Tab {
                         tagChips = tagChipValues,
                         tagChipSelected = tagChip,
                         onTagChipSelect = { tagChip = it },
+                        // tidyFiles --> 書櫃每行直接加標籤
+                        onAddToCategory = { manga -> screenModel.openChangeCategoryDialogFor(manga.manga) },
+                        // tidyFiles <--
                     )
                 }
             }

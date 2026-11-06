@@ -1475,6 +1475,27 @@ class LibraryScreenModel(
         mutableState.update { it.copy(dialog = Dialog.DeleteManga(state.value.selectedManga)) }
     }
 
+    // tidyFiles --> 書櫃每行直接加標籤：唔使入詳情頁撳 3 點
+    fun openChangeCategoryDialogFor(manga: Manga) {
+        screenModelScope.launchIO {
+            val mangaList = listOf(manga)
+            val categories = state.value.libraryData.categories.fastFilter { it.id != 0L }
+            val common = getCommonCategories(mangaList)
+            val mix = getMixCategories(mangaList)
+            val preselected = categories
+                .fastMap {
+                    when (it) {
+                        in common -> CheckboxState.State.Checked(it)
+                        in mix -> CheckboxState.TriState.Exclude(it)
+                        else -> CheckboxState.State.None(it)
+                    }
+                }
+                .toImmutableList()
+            mutableState.update { it.copy(dialog = Dialog.ChangeCategory(mangaList, preselected)) }
+        }
+    }
+    // tidyFiles <--
+
     fun closeDialog() {
         mutableState.update { it.copy(dialog = null) }
     }

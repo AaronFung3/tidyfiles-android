@@ -9,6 +9,7 @@ import eu.kanade.tachiyomi.ui.reader.model.ReaderChapter
 import eu.kanade.tachiyomi.ui.reader.model.ReaderItem
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
 import eu.kanade.tachiyomi.ui.reader.model.ViewerChapters
+import eu.kanade.tachiyomi.ui.reader.setting.PageMergeStore
 import eu.kanade.tachiyomi.ui.reader.viewer.calculateChapterGap
 import eu.kanade.tachiyomi.util.system.createReaderThemeContext
 import eu.kanade.tachiyomi.widget.ViewPagerAdapter
@@ -234,6 +235,50 @@ class PagerViewerAdapter(
         readerThemedContext = viewer.activity.createReaderThemeContext()
     }
 
+    // 畫格 --> 逐頁合併
+    /**
+     * 非雙頁模式下嘅頁面配對：遇到有「合併下一頁」標記嘅頁，就同下一頁配成一對，
+     * 下一頁唔會再單獨出現。只合併同一章節、相鄰嘅頁。
+     */
+    private fun buildMergedItems(): MutableList<Pair<ReaderItem, ReaderItem?>> {
+        val items = mutableListOf<Pair<ReaderItem, ReaderItem?>>()
+        var i = 0
+        while (i < subItems.size) {
+            val cur = subItems[i]
+            val next = subItems.getOrNull(i + 1)
+            if (cur is ReaderPage && next is ReaderPage && canMerge(cur, next)) {
+                items.add(Pair(cur, next))
+                i += 2
+            } else {
+                items.add(Pair(cur, null))
+                i += 1
+            }
+        }
+        return items
+    }
+
+    private fun canMerge(first: ReaderPage, second: ReaderPage): Boolean {
+        if (first.chapter.chapter.id != second.chapter.chapter.id) return false
+        if (second.index != first.index + 1) return false
+        val mangaId = first.chapter.chapter.manga_id ?: return false
+        val chapterId = first.chapter.chapter.id ?: return false
+        return PageMergeStore.isMerged(mangaId, chapterId, first.index)
+    }
+
+    /** 切換合併標記之後重排頁面（做法同 [splitDoublePages] 一樣）。 */
+    fun refreshMergedPages(current: ReaderPage) {
+        val oldCurrent = joinedItems.getOrNull(viewer.pager.currentItem)
+        val oldSecondPage = oldCurrent?.second as? ReaderPage
+        val oldFirstPage = oldCurrent?.first as? ReaderPage
+        val oldPage = oldSecondPage ?: oldFirstPage
+        setJoinedItems(oldSecondPage == current || (current.index + 1) < (oldPage?.index ?: 0))
+        viewer.scope.launchUI {
+            delay(100)
+            viewer.onPageChange(viewer.pager.currentItem)
+        }
+    }
+    // 畫格 <--
+
     // SY -->
     private fun setJoinedItems(useSecondPage: Boolean = false) {
         val oldCurrent = joinedItems.getOrNull(viewer.pager.currentItem)
@@ -244,7 +289,9 @@ class PagerViewerAdapter(
                     readerItem.shiftedPage = false
                 }
             }
-            this.joinedItems = subItems.map { Pair(it, null) }.toMutableList()
+            // 畫格 --> 逐頁合併：有標記嘅頁同下一頁配成一對（同雙頁模式共用 Pair 結構，
+            // PagerPageHolder 會用 mergePages() 拼成一張圖）
+            this.joinedItems = buildMergedItems()
             if (viewer is R2LPagerViewer) {
                 joinedItems.reverse()
             }

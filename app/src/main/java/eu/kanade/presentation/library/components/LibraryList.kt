@@ -23,6 +23,9 @@ internal fun LibraryList(
     onClickContinueReading: ((LibraryManga) -> Unit)?,
     searchQuery: String?,
     onGlobalSearchClicked: () -> Unit,
+    // tidyFiles --> 書櫃每行直接加標籤
+    onAddToCategory: ((LibraryManga) -> Unit)? = null,
+    // tidyFiles <--
 ) {
     FastScrollLazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -67,6 +70,9 @@ internal fun LibraryList(
                 } else {
                     null
                 },
+                // tidyFiles --> 書櫃每行直接加標籤
+                onClickAddToCategory = onAddToCategory?.let { { it(libraryItem.libraryManga) } },
+                // tidyFiles <--
             )
         }
     }

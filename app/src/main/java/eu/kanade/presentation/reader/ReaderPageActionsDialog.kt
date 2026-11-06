@@ -9,6 +9,7 @@ import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Photo
 import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -39,6 +40,10 @@ fun ReaderPageActionsDialog(
     onSaveCombined: () -> Unit,
     hasExtraPage: Boolean,
     // SY <--
+    // 畫格 -->
+    isMergedWithNext: Boolean = false,
+    onToggleMerge: () -> Unit = {},
+    // 畫格 <--
 ) {
     var showSetCoverDialog by remember { mutableStateOf(false) }
     // SY -->
@@ -194,6 +199,29 @@ fun ReaderPageActionsDialog(
                     )
                 }
             }
+            // 畫格 --> 逐頁合併：呢頁同下一頁拼成一張（雙頁模式嘅配對唔會顯示呢個掣）
+            if (isMergedWithNext || !hasExtraPage) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(MaterialTheme.padding.small),
+                ) {
+                    ActionButton(
+                        modifier = Modifier.weight(1f),
+                        title = stringResource(
+                            if (isMergedWithNext) {
+                                MR.strings.action_unmerge_with_next_page
+                            } else {
+                                MR.strings.action_merge_with_next_page
+                            },
+                        ),
+                        icon = Icons.Outlined.SkipNext,
+                        onClick = {
+                            onToggleMerge()
+                            onDismissRequest()
+                        },
+                    )
+                }
+            }
+            // 畫格 <--
         }
     }
 

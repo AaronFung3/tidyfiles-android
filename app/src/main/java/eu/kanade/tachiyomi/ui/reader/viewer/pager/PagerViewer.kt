@@ -199,6 +199,10 @@ abstract class PagerViewer(
             .filterIsInstance<PagerPageHolder>()
             .firstOrNull { it.item.first == page || it.item.second == page }
 
+    // 畫格 --> 逐頁合併：切換標記之後重排頁面
+    fun refreshMergedPages(page: ReaderPage) = adapter.refreshMergedPages(page)
+    // 畫格 <--
+
     /**
      * Called when a new page (either a [ReaderPage] or [ChapterTransition]) is marked as active
      */

@@ -316,13 +316,11 @@ open class ReaderPageImageView @JvmOverloads constructor(
      */
     private fun enhancementBackendName(): String {
         if (!realCuganEnabled) return ""
-        // KMK -->
-        return when (preferences.realCuganProcessingBackend().get()) {
-            Waifu2x.PROCESSING_BACKEND_QUALCOMM_NPU -> "QNN"
-            Waifu2x.PROCESSING_BACKEND_MEDIATEK_NPU -> "LiteRT"
-            else -> "Vulkan"
-        }
-        // KMK <--
+        // 改良版（畫格）：超分完成後唔喺左下角顯示後端名（"QNN"/"Vulkan"/"LiteRT"）。
+        // 呢個函式只餵狀態字（見 updateStatus 的呼叫點），唔影響 cache config hash，
+        // 亦唔影響超分本身；處理中／排隊／錯誤嘅狀態字照舊顯示。
+        // 想恢復舊行為就還原下面三個 when 分支。
+        return ""
     }
     // KMK <--
 
@@ -745,6 +743,8 @@ open class ReaderPageImageView @JvmOverloads constructor(
                         }
                     } else {
                         updateStatus(enhancementBackendName())
+                        // 畫格：呢頁已經有超分成品 → 頁碼旁亮 HD 小點
+                        ImageEnhancementCache.markHd(mId, cId, pIdx)
                     }
                 } else if (ImageEnhancementCache.isSkipped(mId, cId, pIdx, configHash, pageVariant)) {
                     // KMK --> the page is now the one the user navigated to, so give it another
@@ -1429,6 +1429,8 @@ open class ReaderPageImageView @JvmOverloads constructor(
                         currentLoadedUri = cachedFile.toURI().toString()
                         isVisible = true
                         updateStatus(enhancementBackendName())
+                        // 畫格：由 cache 出成品 → 頁碼旁亮 HD 小點
+                        ImageEnhancementCache.markHd(mId, cId, pIdx)
                     } else {
                         viewScope.launchIO {
                             healInvalidEnhancedCache(
@@ -1608,6 +1610,8 @@ open class ReaderPageImageView @JvmOverloads constructor(
                         updateStatus(context.stringResource(KMR.strings.reader_status_enhancing_progress, progress))
                     } else if (requested && wasEnhancing) {
                         updateStatus(enhancementBackendName())
+                        // 畫格：輪詢見到「做完」→ 頁碼旁亮 HD 小點
+                        ImageEnhancementCache.markHd(mId, cId, pIdx)
                     } else if (requested) {
                         updateStatus(context.stringResource(KMR.strings.reader_status_queued))
                     } else {

@@ -3,16 +3,17 @@
     android:height="108dp"
     android:viewportWidth="432"
     android:viewportHeight="432">
-  <path
-      android:fillColor="#E8E2D6"
-      android:pathData="M124,108h64a16,16 0 0 1 16,16v64a16,16 0 0 1 -16,16h-64a16,16 0 0 1 -16,-16v-64a16,16 0 0 1 16,-16z"/>
-  <path
-      android:fillColor="#E8E2D6"
-      android:pathData="M244,108h64a16,16 0 0 1 16,16v64a16,16 0 0 1 -16,16h-64a16,16 0 0 1 -16,-16v-64a16,16 0 0 1 16,-16z"/>
-  <path
-      android:fillColor="#E8E2D6"
-      android:pathData="M124,228h64a16,16 0 0 1 16,16v64a16,16 0 0 1 -16,16h-64a16,16 0 0 1 -16,-16v-64a16,16 0 0 1 16,-16z"/>
-  <path
-      android:fillColor="#6F9C95"
-      android:pathData="M244,228h64a16,16 0 0 1 16,16v64a16,16 0 0 1 -16,16h-64a16,16 0 0 1 -16,-16v-64a16,16 0 0 1 16,-16z"/>
+  <!-- 「畫格」：一格漫畫分格，左上（青綠，已超分）／右下（米白，原圖）
+       兩邊對角切開＝「同一格，處理前後」。單一概念、兩個形狀，48dp 都讀得到。
+       全部落在 108dp 自適應圖示嘅安全圈內（188 邊長，圓形遮罩都唔會切走）。 -->
+  <group>
+    <clip-path
+        android:pathData="M148,122h136a26,26 0 0 1 26,26v136a26,26 0 0 1 -26,26h-136a26,26 0 0 1 -26,-26v-136a26,26 0 0 1 26,-26z"/>
+    <path
+        android:fillColor="#E8E2D6"
+        android:pathData="M122,122h188v188h-188z"/>
+    <path
+        android:fillColor="#6F9C95"
+        android:pathData="M122,122h188l-188,188z"/>
+  </group>
 </vector>

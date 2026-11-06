@@ -92,6 +92,7 @@ import eu.kanade.tachiyomi.ui.reader.loader.HttpPageLoader
 import eu.kanade.tachiyomi.ui.reader.model.ReaderChapter
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
 import eu.kanade.tachiyomi.ui.reader.model.ViewerChapters
+import eu.kanade.tachiyomi.ui.reader.setting.PageMergeStore
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderOrientation
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderSettingsScreenModel
@@ -107,6 +108,7 @@ import eu.kanade.tachiyomi.util.system.openInBrowser
 import eu.kanade.tachiyomi.util.system.toShareIntent
 import eu.kanade.tachiyomi.util.system.toast
 import eu.kanade.tachiyomi.util.view.setComposeContent
+import eu.kanade.tachiyomi.util.waifu2x.ImageEnhancementCache
 import eu.kanade.tachiyomi.util.waifu2x.Waifu2x
 import exh.source.isEhBasedSource
 import exh.util.defaultReaderType
@@ -332,6 +334,9 @@ class ReaderActivity : BaseActivity() {
             // KMK <--
             val state by viewModel.state.collectAsState()
             val showPageNumber by readerPreferences.showPageNumber().collectAsState()
+            // 畫格 --> 頁碼旁「已 HD」小點：跟住 cache 標記同當前章節
+            val hdMarks by ImageEnhancementCache.hdMarks.collectAsState()
+            // 畫格 <--
             val settingsScreenModel = remember {
                 ReaderSettingsScreenModel(
                     readerState = viewModel.state,
@@ -347,6 +352,10 @@ class ReaderActivity : BaseActivity() {
                         currentPage = state.currentPageText,
                         // SY <--
                         totalPages = state.totalPages,
+                        // 畫格 --> 呢頁有超分成品就亮小點（章節對得上才算）
+                        isHd = hdMarks.chapterId == (state.currentChapter?.chapter?.id ?: -1L) &&
+                            state.currentPage in hdMarks.pages,
+                        // 畫格 <--
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
                             .navigationBarsPadding(),
@@ -426,6 +435,17 @@ class ReaderActivity : BaseActivity() {
                 }
 
                 is ReaderViewModel.Dialog.PageActions -> {
+                    // 畫格 --> 逐頁合併：標記可能喺呢頁（第一半）或者上一頁（第二半）
+                    val mergePage = (state.dialog as ReaderViewModel.Dialog.PageActions).page
+                    val mergeMangaId = mergePage.chapter.chapter.manga_id ?: -1L
+                    val mergeChapterId = mergePage.chapter.chapter.id ?: -1L
+                    val mergeAnchor = when {
+                        PageMergeStore.isMerged(mergeMangaId, mergeChapterId, mergePage.index) -> mergePage.index
+                        mergePage.index > 0 &&
+                            PageMergeStore.isMerged(mergeMangaId, mergeChapterId, mergePage.index - 1) -> mergePage.index - 1
+                        else -> null
+                    }
+                    // 畫格 <--
                     ReaderPageActionsDialog(
                         onDismissRequest = onDismissRequest,
                         onSetAsCover = viewModel::setAsCover,
@@ -451,6 +471,17 @@ class ReaderActivity : BaseActivity() {
                             }
                         },
                         hasExtraPage = (state.dialog as? ReaderViewModel.Dialog.PageActions)?.extraPage != null,
+                        // 畫格 --> 逐頁合併
+                        isMergedWithNext = mergeAnchor != null,
+                        onToggleMerge = {
+                            PageMergeStore.toggle(
+                                mergeMangaId,
+                                mergeChapterId,
+                                mergeAnchor ?: mergePage.index,
+                            )
+                            (state.viewer as? PagerViewer)?.refreshMergedPages(mergePage)
+                        },
+                        // 畫格 <--
                     )
                 }
 

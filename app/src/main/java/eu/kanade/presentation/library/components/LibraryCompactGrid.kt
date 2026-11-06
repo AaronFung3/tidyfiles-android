@@ -25,6 +25,7 @@ internal fun LibraryCompactGrid(
     onGlobalSearchClicked: () -> Unit,
     // tidyFiles -->
     groupItems: Boolean = false,
+    onAddToCategory: ((LibraryManga) -> Unit)? = null,
     // tidyFiles <--
 ) {
     // tidyFiles -->
@@ -63,6 +64,7 @@ internal fun LibraryCompactGrid(
                         onClick = onClick,
                         onLongClick = onLongClick,
                         onClickContinueReading = onClickContinueReading,
+                        onAddToCategory = onAddToCategory,
                     )
                 }
             }
@@ -79,6 +81,7 @@ internal fun LibraryCompactGrid(
                     onClick = onClick,
                     onLongClick = onLongClick,
                     onClickContinueReading = onClickContinueReading,
+                    onAddToCategory = onAddToCategory,
                 )
             }
             // tidyFiles -->
@@ -95,6 +98,9 @@ private fun CompactItem(
     onClick: (LibraryManga) -> Unit,
     onLongClick: (LibraryManga) -> Unit,
     onClickContinueReading: ((LibraryManga) -> Unit)?,
+    // tidyFiles --> 書櫃每格直接加標籤
+    onAddToCategory: ((LibraryManga) -> Unit)? = null,
+    // tidyFiles <--
 ) {
     val manga = libraryItem.libraryManga.manga
     MangaCompactGridItem(
@@ -123,5 +129,8 @@ private fun CompactItem(
         } else {
             null
         },
+        // tidyFiles --> 書櫃每格直接加標籤
+        onClickAddToCategory = onAddToCategory?.let { { it(libraryItem.libraryManga) } },
+        // tidyFiles <--
     )
 }

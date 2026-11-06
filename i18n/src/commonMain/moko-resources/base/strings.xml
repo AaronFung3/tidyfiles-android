@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name" translatable="false">相簿</string>
+    <string name="app_name" translatable="false">畫格</string>
+
+    <!-- 畫格：逐頁合併（掃描本跨頁被切成兩張時用） -->
+    <string name="action_merge_with_next_page">Merge with next page</string>
+    <string name="action_unmerge_with_next_page">Unmerge from next page</string>
 
     <!-- Generic strings -->
     <string name="on">On</string>
