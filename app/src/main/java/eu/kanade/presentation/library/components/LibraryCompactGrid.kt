@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import eu.kanade.tachiyomi.source.tidyfiles.TidyFilesSource
 import eu.kanade.tachiyomi.ui.library.LibraryItem
 import tachiyomi.domain.library.model.LibraryManga
 import tachiyomi.domain.manga.model.MangaCover
@@ -25,7 +26,7 @@ internal fun LibraryCompactGrid(
     onGlobalSearchClicked: () -> Unit,
     // tidyFiles -->
     groupItems: Boolean = false,
-    onAddToCategory: ((LibraryManga) -> Unit)? = null,
+    onEditTags: ((LibraryManga) -> Unit)? = null,
     // tidyFiles <--
 ) {
     // tidyFiles -->
@@ -64,7 +65,7 @@ internal fun LibraryCompactGrid(
                         onClick = onClick,
                         onLongClick = onLongClick,
                         onClickContinueReading = onClickContinueReading,
-                        onAddToCategory = onAddToCategory,
+                        onEditTags = onEditTags,
                     )
                 }
             }
@@ -81,7 +82,7 @@ internal fun LibraryCompactGrid(
                     onClick = onClick,
                     onLongClick = onLongClick,
                     onClickContinueReading = onClickContinueReading,
-                    onAddToCategory = onAddToCategory,
+                    onEditTags = onEditTags,
                 )
             }
             // tidyFiles -->
@@ -99,7 +100,7 @@ private fun CompactItem(
     onLongClick: (LibraryManga) -> Unit,
     onClickContinueReading: ((LibraryManga) -> Unit)?,
     // tidyFiles --> 書櫃每格直接加標籤
-    onAddToCategory: ((LibraryManga) -> Unit)? = null,
+    onEditTags: ((LibraryManga) -> Unit)? = null,
     // tidyFiles <--
 ) {
     val manga = libraryItem.libraryManga.manga
@@ -129,8 +130,10 @@ private fun CompactItem(
         } else {
             null
         },
-        // tidyFiles --> 書櫃每格直接加標籤
-        onClickAddToCategory = onAddToCategory?.let { { it(libraryItem.libraryManga) } },
+        // tidyFiles --> 只限 tidyFiles 來源嘅書先有「改 tag」掣
+        onClickEditTags = onEditTags
+            ?.takeIf { libraryItem.libraryManga.manga.source == TidyFilesSource.ID }
+            ?.let { { it(libraryItem.libraryManga) } },
         // tidyFiles <--
     )
 }

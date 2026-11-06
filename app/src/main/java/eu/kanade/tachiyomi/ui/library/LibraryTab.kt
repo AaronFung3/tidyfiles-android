@@ -42,6 +42,7 @@ import eu.kanade.presentation.library.components.SyncFavoritesProgressDialog
 import eu.kanade.presentation.library.components.SyncFavoritesWarningDialog
 import eu.kanade.presentation.manga.components.LibraryBottomActionMenu
 import eu.kanade.presentation.more.onboarding.GETTING_STARTED_URL
+import eu.kanade.presentation.tidyfiles.TidyFilesManageDialog
 import eu.kanade.presentation.util.Tab
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.data.download.DownloadCache
@@ -368,7 +369,7 @@ data object LibraryTab : Tab {
                         tagChipSelected = tagChip,
                         onTagChipSelect = { tagChip = it },
                         // tidyFiles --> 書櫃每行直接加標籤
-                        onAddToCategory = { manga -> screenModel.openChangeCategoryDialogFor(manga.manga) },
+                        onEditTags = { manga -> screenModel.openTidyFilesManageDialog(manga.manga) },
                         // tidyFiles <--
                     )
                 }
@@ -406,6 +407,16 @@ data object LibraryTab : Tab {
                     },
                 )
             }
+            // tidyFiles --> 書櫃直接改 PC 手打 tag
+            is LibraryScreenModel.Dialog.TidyFilesManage -> {
+                TidyFilesManageDialog(
+                    rel = dialog.rel,
+                    title = dialog.title,
+                    tags = dialog.tags,
+                    onDismissRequest = onDismissRequest,
+                )
+            }
+            // tidyFiles <--
             is LibraryScreenModel.Dialog.DeleteManga -> {
                 DeleteLibraryMangaDialog(
                     containsLocalManga = dialog.manga.any(Manga::isLocal),

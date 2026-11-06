@@ -52,7 +52,7 @@ fun LibraryContent(
     tagChips: List<Pair<String, Int>> = emptyList(),
     tagChipSelected: String? = null,
     onTagChipSelect: (String?) -> Unit = {},
-    onAddToCategory: ((LibraryManga) -> Unit)? = null,
+    onEditTags: ((LibraryManga) -> Unit)? = null,
     // tidyFiles <--
 ) {
     Column(
@@ -136,7 +136,7 @@ fun LibraryContent(
                 onLongClickManga = onToggleRangeSelection,
                 onClickContinueReading = onContinueReadingClicked,
                 // tidyFiles --> 書櫃每行直接加標籤
-                onAddToCategory = onAddToCategory,
+                onEditTags = onEditTags,
                 // tidyFiles <--
             )
         }

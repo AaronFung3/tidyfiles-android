@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import eu.kanade.tachiyomi.source.tidyfiles.TidyFilesSource
 import eu.kanade.tachiyomi.ui.library.LibraryItem
 import tachiyomi.domain.library.model.LibraryManga
 import tachiyomi.domain.manga.model.MangaCover
@@ -23,8 +24,7 @@ internal fun LibraryList(
     onClickContinueReading: ((LibraryManga) -> Unit)?,
     searchQuery: String?,
     onGlobalSearchClicked: () -> Unit,
-    // tidyFiles --> 書櫃每行直接加標籤
-    onAddToCategory: ((LibraryManga) -> Unit)? = null,
+        onEditTags: ((LibraryManga) -> Unit)? = null,
     // tidyFiles <--
 ) {
     FastScrollLazyColumn(
@@ -70,8 +70,10 @@ internal fun LibraryList(
                 } else {
                     null
                 },
-                // tidyFiles --> 書櫃每行直接加標籤
-                onClickAddToCategory = onAddToCategory?.let { { it(libraryItem.libraryManga) } },
+                // tidyFiles --> 只限 tidyFiles 來源嘅書先有「改 tag」掣
+                onClickEditTags = onEditTags
+                    ?.takeIf { libraryItem.libraryManga.manga.source == TidyFilesSource.ID }
+                    ?.let { { it(libraryItem.libraryManga) } },
                 // tidyFiles <--
             )
         }

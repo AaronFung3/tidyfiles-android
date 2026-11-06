@@ -65,6 +65,17 @@ object ImageEnhancer {
     private var waitingForVisibleImage = false
     // KMK <--
 
+    // tidyFiles --> 捲動中暫停超分（由 viewer 嘅 scroll state 控制）
+    @Volatile
+    private var scrolling = false
+
+    fun setScrolling(value: Boolean) {
+        if (scrolling == value) return
+        scrolling = value
+        if (!value) queueSignal.trySend(Unit)
+    }
+    // tidyFiles <--
+
     @Volatile
     private var activeMangaId = -1L
 
@@ -154,6 +165,13 @@ object ImageEnhancer {
                         }
                         isFirstRequestAfterReset = false
                     }
+
+                    // tidyFiles --> 捲動中暫停超分：GPU／CPU 留返俾畫面渲染，減少卡頓
+                    if (scrolling) {
+                        kotlinx.coroutines.delay(120)
+                        continue
+                    }
+                    // tidyFiles <--
 
                     // Poll under the same monitor as reprioritization/cancellation.
                     // Waiting for work must not hold that monitor or an IO thread.

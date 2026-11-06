@@ -1475,23 +1475,16 @@ class LibraryScreenModel(
         mutableState.update { it.copy(dialog = Dialog.DeleteManga(state.value.selectedManga)) }
     }
 
-    // tidyFiles --> 書櫃每行直接加標籤：唔使入詳情頁撳 3 點
-    fun openChangeCategoryDialogFor(manga: Manga) {
+    // tidyFiles --> 書櫃每行直接改 PC 手打 tag（唔使入詳情頁撳 3 點）
+    fun openTidyFilesManageDialog(manga: Manga) {
         screenModelScope.launchIO {
-            val mangaList = listOf(manga)
-            val categories = state.value.libraryData.categories.fastFilter { it.id != 0L }
-            val common = getCommonCategories(mangaList)
-            val mix = getMixCategories(mangaList)
-            val preselected = categories
-                .fastMap {
-                    when (it) {
-                        in common -> CheckboxState.State.Checked(it)
-                        in mix -> CheckboxState.TriState.Exclude(it)
-                        else -> CheckboxState.State.None(it)
-                    }
-                }
-                .toImmutableList()
-            mutableState.update { it.copy(dialog = Dialog.ChangeCategory(mangaList, preselected)) }
+            val rel = getChaptersByMangaId.await(manga.id, applyFilter = true)
+                .minByOrNull { it.sourceOrder }
+                ?.url
+                ?: return@launchIO
+            mutableState.update {
+                it.copy(dialog = Dialog.TidyFilesManage(rel, manga.title, manga.genre.orEmpty()))
+            }
         }
     }
     // tidyFiles <--
@@ -1507,6 +1500,14 @@ class LibraryScreenModel(
             val initialSelection: ImmutableList<CheckboxState<Category>>,
         ) : Dialog
         data class DeleteManga(val manga: List<Manga>) : Dialog
+
+        // tidyFiles --> 書櫃直接改 PC 手打 tag
+        data class TidyFilesManage(
+            val rel: String,
+            val title: String,
+            val tags: List<String>,
+        ) : Dialog
+        // tidyFiles <--
 
         // SY -->
         data object SyncFavoritesWarning : Dialog

@@ -47,7 +47,7 @@ fun LibraryPager(
     onLongClickManga: (Category, LibraryManga) -> Unit,
     onClickContinueReading: ((LibraryManga) -> Unit)?,
     // tidyFiles --> 書櫃每行直接加標籤
-    onAddToCategory: ((LibraryManga) -> Unit)? = null,
+    onEditTags: ((LibraryManga) -> Unit)? = null,
     // tidyFiles <--
 ) {
     HorizontalPager(
@@ -101,7 +101,7 @@ fun LibraryPager(
                     onClickContinueReading = onClickContinueReading,
                     searchQuery = searchQuery,
                     onGlobalSearchClicked = onGlobalSearchClicked,
-                    onAddToCategory = onAddToCategory,
+                    onEditTags = onEditTags,
                 )
             }
             LibraryDisplayMode.CompactGrid, LibraryDisplayMode.CoverOnlyGrid -> {
@@ -117,7 +117,7 @@ fun LibraryPager(
                     searchQuery = searchQuery,
                     onGlobalSearchClicked = onGlobalSearchClicked,
                     groupItems = groupItems,
-                    onAddToCategory = onAddToCategory,
+                    onEditTags = onEditTags,
                 )
             }
             LibraryDisplayMode.ComfortableGrid -> {

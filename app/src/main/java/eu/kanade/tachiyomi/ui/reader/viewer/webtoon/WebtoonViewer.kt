@@ -109,6 +109,14 @@ class WebtoonViewer(
         recycler.adapter = adapter
         recycler.addOnScrollListener(
             object : RecyclerView.OnScrollListener() {
+                // tidyFiles --> 捲動期間暫停超分，GPU／CPU 留返俾畫面渲染（減少卡頓）
+                override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
+                    eu.kanade.tachiyomi.util.waifu2x.ImageEnhancer.setScrolling(
+                        newState != RecyclerView.SCROLL_STATE_IDLE,
+                    )
+                }
+                // tidyFiles <--
+
                 override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
                     onScrolled()
 
@@ -256,6 +264,9 @@ class WebtoonViewer(
         // KMK -->
         eu.kanade.tachiyomi.util.waifu2x.ImageEnhancer.cancelAll("webtoon viewer destroyed")
         // KMK <--
+        // tidyFiles --> 離開閱讀器要解除「捲動中暫停」，否則超分會一直停住
+        eu.kanade.tachiyomi.util.waifu2x.ImageEnhancer.setScrolling(false)
+        // tidyFiles <--
         scope.cancel()
     }
 
@@ -458,4 +469,5 @@ class WebtoonViewer(
 }
 
 // Double the cache size to reduce rebinds/recycles incurred by the extra layout space on scroll direction changes
-private const val RECYCLER_VIEW_CACHE_SIZE = 4
+// tidyFiles --> 由 4 加到 8：捲得快少少就唔會即刻見黑圖（多幾格留住已解碼嘅頁）
+private const val RECYCLER_VIEW_CACHE_SIZE = 8

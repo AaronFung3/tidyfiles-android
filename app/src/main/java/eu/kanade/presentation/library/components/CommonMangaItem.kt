@@ -88,7 +88,7 @@ fun MangaCompactGridItem(
     coverBadgeStart: @Composable (RowScope.() -> Unit)? = null,
     coverBadgeEnd: @Composable (RowScope.() -> Unit)? = null,
     // tidyFiles --> 書櫃每格直接加標籤（唔使入詳情頁撳 3 點）
-    onClickAddToCategory: (() -> Unit)? = null,
+    onClickEditTags: (() -> Unit)? = null,
     // tidyFiles <--
     // KMK -->
     libraryColored: Boolean = true,
@@ -137,20 +137,20 @@ fun MangaCompactGridItem(
                     CoverTextOverlay(
                         title = title,
                         onClickContinueReading = onClickContinueReading,
-                        onClickAddToCategory = onClickAddToCategory,
+                        onClickEditTags = onClickEditTags,
                     )
-                } else if (onClickContinueReading != null || onClickAddToCategory != null) {
+                } else if (onClickContinueReading != null || onClickEditTags != null) {
                     Row(
                         modifier = Modifier
                             .padding(ContinueReadingButtonGridPadding)
                             .align(Alignment.BottomEnd),
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        if (onClickAddToCategory != null) {
+                        if (onClickEditTags != null) {
                             TagButton(
                                 size = ContinueReadingButtonSizeLarge,
                                 iconSize = ContinueReadingButtonIconSizeLarge,
-                                onClick = onClickAddToCategory,
+                                onClick = onClickEditTags,
                             )
                         }
                         if (onClickContinueReading != null) {
@@ -175,7 +175,7 @@ private fun BoxScope.CoverTextOverlay(
     title: String,
     onClickContinueReading: (() -> Unit)? = null,
     // tidyFiles --> 直接加標籤
-    onClickAddToCategory: (() -> Unit)? = null,
+    onClickEditTags: (() -> Unit)? = null,
     // tidyFiles <--
 ) {
     Box(
@@ -209,11 +209,11 @@ private fun BoxScope.CoverTextOverlay(
             ),
             minLines = 1,
         )
-        if (onClickAddToCategory != null) {
+        if (onClickEditTags != null) {
             TagButton(
                 size = ContinueReadingButtonSizeSmall,
                 iconSize = ContinueReadingButtonIconSizeSmall,
-                onClick = onClickAddToCategory,
+                onClick = onClickEditTags,
                 modifier = Modifier.padding(
                     end = 4.dp,
                     bottom = ContinueReadingButtonGridPadding,
@@ -474,7 +474,7 @@ fun MangaListItem(
     libraryColored: Boolean = true,
     // KMK <--
     // tidyFiles --> 直接加標籤
-    onClickAddToCategory: (() -> Unit)? = null,
+    onClickEditTags: (() -> Unit)? = null,
     // tidyFiles <--
 ) {
     // KMK -->
@@ -527,11 +527,11 @@ fun MangaListItem(
             style = MaterialTheme.typography.bodyMedium,
         )
         BadgeGroup(content = badge)
-        if (onClickAddToCategory != null) {
+        if (onClickEditTags != null) {
             TagButton(
                 size = ContinueReadingButtonSizeSmall,
                 iconSize = ContinueReadingButtonIconSizeSmall,
-                onClick = onClickAddToCategory,
+                onClick = onClickEditTags,
                 modifier = Modifier.padding(start = ContinueReadingButtonListSpacing),
             )
         }

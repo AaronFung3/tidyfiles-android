@@ -159,7 +159,8 @@ class ReaderPreferences(
 
     fun realEsrganStyle() = preferenceStore.getInt("pref_realesrgan_style", 0) // 0: Anime, 1: Photo
 
-    fun realCuganPreloadSize() = preferenceStore.getInt("pref_realcugan_preload_size", 3)
+    // tidyFiles --> 預設由 3 加到 5：捲動時多幾頁緩衝，唔會即刻見黑圖
+    fun realCuganPreloadSize() = preferenceStore.getInt("pref_realcugan_preload_size", 5)
 
     fun realCuganPerformanceMode() = preferenceStore.getInt("pref_realcugan_performance_mode", 0) // 0: 90%, 1: 50%, 2: 30%
 
