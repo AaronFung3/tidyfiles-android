@@ -591,7 +591,7 @@ private fun TagButton(
     ) {
         Icon(
             imageVector = Icons.Outlined.Label,
-            contentDescription = stringResource(MR.strings.action_edit_categories),
+            contentDescription = stringResource(MR.strings.action_edit_tags),
             modifier = Modifier.size(iconSize),
         )
     }

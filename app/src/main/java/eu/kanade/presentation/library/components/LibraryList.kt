@@ -24,7 +24,8 @@ internal fun LibraryList(
     onClickContinueReading: ((LibraryManga) -> Unit)?,
     searchQuery: String?,
     onGlobalSearchClicked: () -> Unit,
-        onEditTags: ((LibraryManga) -> Unit)? = null,
+    // tidyFiles --> 書櫃每行直接改 PC 手打 tag
+    onEditTags: ((LibraryManga) -> Unit)? = null,
     // tidyFiles <--
 ) {
     FastScrollLazyColumn(
