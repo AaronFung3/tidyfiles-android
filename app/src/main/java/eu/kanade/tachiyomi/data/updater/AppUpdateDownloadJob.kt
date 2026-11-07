@@ -175,6 +175,17 @@ class AppUpdateDownloadJob(private val context: Context, workerParams: WorkerPar
             // File where the apk will be saved.
             val apkFile = File(context.externalCacheDir, "update.apk")
 
+            // tidyFiles --> 續傳只可以喺「同一個下載連結」之下做。
+            // 換咗版本（唔同 tag）而舊 APK 仲喺 cache：Range 由舊檔大細開始，會將新檔尾段接落舊 APK，
+            // 砌出一個大小似樣但內容壞嘅檔案 → PackageInstaller 回 STATUS_FAILURE_INVALID（install status=4）。
+            val apkSourceFile = File(context.externalCacheDir, "update.apk.url")
+            val previousUrl = runCatching { apkSourceFile.readText() }.getOrNull()
+            if (previousUrl != url) {
+                apkFile.delete()
+                runCatching { apkSourceFile.writeText(url) }
+            }
+            // tidyFiles <--
+
             // KMK -->
             network.downloadFileWithResume(url, apkFile, progressListener)
             if (isStopped) {

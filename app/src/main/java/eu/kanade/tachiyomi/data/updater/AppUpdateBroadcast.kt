@@ -9,6 +9,7 @@ import eu.kanade.tachiyomi.util.system.getParcelableExtraCompat
 import eu.kanade.tachiyomi.util.system.toast
 import exh.log.xLogE
 import tachiyomi.i18n.kmk.KMR
+import java.io.File
 
 class AppUpdateBroadcast : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -51,6 +52,12 @@ class AppUpdateBroadcast : BroadcastReceiver() {
                     if (status != PackageInstaller.STATUS_FAILURE_ABORTED) {
                         // tidyFiles --> 安裝失敗：app 內更新頁要識得講返出咗咩事
                         AppUpdateState.setFailed(context, "install status=$status")
+                        // tidyFiles <--
+                        // tidyFiles --> 檔案本身壞（INVALID）：刪咗佢，下次由頭落，唔好再喺壞檔上面續傳
+                        if (status == PackageInstaller.STATUS_FAILURE_INVALID) {
+                            File(context.externalCacheDir, "update.apk").delete()
+                            File(context.externalCacheDir, "update.apk.url").delete()
+                        }
                         // tidyFiles <--
                         context.toast(KMR.strings.could_not_install_update)
                         val uri = intent.getStringExtra(AppUpdateDownloadJob.EXTRA_FILE_URI) ?: return

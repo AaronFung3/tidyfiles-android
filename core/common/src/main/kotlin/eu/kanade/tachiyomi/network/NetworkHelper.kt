@@ -128,10 +128,31 @@ import kotlin.random.Random
                 var failed = false
                 client.newCachelessCallWithProgress(request, progressListener).execute().use { response ->
                     if (response.isSuccessful || response.code == 206) { // 206 indicates partial content
-                        saveResponseToFile(response, outputFile, downloadedBytes)
-                        if (response.isSuccessful) {
+                        // tidyFiles --> 伺服器唔理 Range、直接回 200 全檔時，一定要由 0 開始寫；
+                        // 照舊用 downloadedBytes 做偏移會將新檔接喺舊檔尾，砌出一個壞 APK（安裝會 FAILURE_INVALID）
+                        val startAt = if (response.code == 206) downloadedBytes else 0L
+                        // 收齊前先記低預期大細：206 睇 Content-Range、200 睇 Content-Length
+                        val expectedTotal = response.header("Content-Range")
+                            ?.substringAfter('/', "")
+                            ?.toLongOrNull()
+                            ?.takeIf { it > 0 }
+                            ?: response.header("Content-Length")
+                                ?.toLongOrNull()
+                                ?.takeIf { it > 0 }
+                                ?.plus(startAt)
+                        saveResponseToFile(response, outputFile, startAt)
+                        if (expectedTotal == null || outputFile.length() == expectedTotal) {
                             return
                         }
+                        // 大細對唔上＝呢次落載唔完整，唔可以當成功交去安裝
+                        logcat(LogPriority.ERROR) {
+                            "Size mismatch: got ${outputFile.length()} want $expectedTotal"
+                        }
+                        if (response.code == 206) {
+                            outputFile.delete()
+                        }
+                        attempt++
+                        failed = true
                     } else {
                         attempt++
                         logcat(LogPriority.ERROR) { "Unexpected response code: ${response.code}. Retrying..." }
