@@ -492,7 +492,12 @@ private fun MangaScreenSmallImpl(
                 onClickMigrate = onMigrateClicked,
                 onClickEditNotes = onEditNotesClicked,
                 // SY -->
-                onClickEditInfo = onEditInfoClicked.takeIf { state.manga.favorite },
+                // tidyFiles --> tidyFiles 來源唔開「編輯資訊」（tag／書名／作者一律 PC 做
+                // 準，本地改會同 PC 分叉），tag 統一喺「Tag」掣度改
+                onClickEditInfo = onEditInfoClicked.takeIf {
+                    state.manga.favorite && state.source !is eu.kanade.tachiyomi.source.tidyfiles.TidyFilesSource
+                },
+                // tidyFiles <--
                 onClickTidyFilesManage = onTidyFilesManageClicked,
                 // KMK -->
                 onClickSourceSettings = onClickSourceSettingsClicked,
@@ -952,7 +957,12 @@ private fun MangaScreenLargeImpl(
                 onClickEditNotes = onEditNotesClicked,
                 onCancelActionMode = { onAllChapterSelected(false) },
                 // SY -->
-                onClickEditInfo = onEditInfoClicked.takeIf { state.manga.favorite },
+                // tidyFiles --> tidyFiles 來源唔開「編輯資訊」（tag／書名／作者一律 PC 做
+                // 準，本地改會同 PC 分叉），tag 統一喺「Tag」掣度改
+                onClickEditInfo = onEditInfoClicked.takeIf {
+                    state.manga.favorite && state.source !is eu.kanade.tachiyomi.source.tidyfiles.TidyFilesSource
+                },
+                // tidyFiles <--
                 onClickTidyFilesManage = onTidyFilesManageClicked,
                 // KMK -->
                 onClickSourceSettings = onClickSourceSettingsClicked,
