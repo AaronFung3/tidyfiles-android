@@ -3,6 +3,7 @@ package eu.kanade.tachiyomi.source.tidyfiles
 import android.util.Log
 import eu.kanade.tachiyomi.source.model.UpdateStrategy
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -112,22 +113,22 @@ object TidyFilesSync {
             }
             // tidyFiles <--
 
-            // tidyFiles --> PC 改咗 tag／書名／簡介，已存在嘅書都要跟。
-            // 只更新「冇被用戶手動改過」嘅欄（顯示值 ＝ og 值先當冇改過），
-            // 否則會蓋走用戶喺「編輯資訊」度改嘅嘢。
+            // tidyFiles --> PC 係唯一真相來源（2026-11-07 統一 tag 入口、「編輯資訊」收埋
+            // 之後，本地唔會再有手動改動）：PC 改咗書名／tag／簡介／封面就照跟，
+            // 以前喺「編輯資訊」改過嘅書都會被 PC 值蓋返正確嘅。
             if (existing != null) {
                 var update = MangaUpdate(id = manga.id)
                 var dirty = false
-                if (item.title != manga.title && manga.title == manga.ogTitle) {
+                if (item.title != manga.title) {
                     update = update.copy(title = item.title)
                     dirty = true
                 }
                 val newGenre = item.tags.takeIf { it.isNotEmpty() }
-                if (newGenre != manga.genre && manga.genre == manga.ogGenre) {
+                if (newGenre != manga.genre) {
                     update = update.copy(genre = newGenre)
                     dirty = true
                 }
-                if (item.description != manga.description && manga.description == manga.ogDescription) {
+                if (item.description != manga.description) {
                     update = update.copy(description = item.description)
                     dirty = true
                 }
@@ -202,11 +203,26 @@ object TidyFilesSync {
             }
         }
 
-        if (newlyAdded.isNotEmpty() || categorised > 0 || progressSynced > 0) {
+        // tidyFiles --> 孤兒清掃：本地書櫃入面 tidyFiles 來源嘅書，PC 已經冇咗呢個
+        // seriesKey（PC 端改名／體檢搬走咗）→ 自動移出書櫃（只係本地書櫃唔再顯示，
+        // 唔刪任何檔案）。PC 係唯一真相來源；keys 係今次成功 fetch 嘅 PC 真相。
+        val pcKeys = series.mapTo(HashSet()) { it.key }
+        var orphansRemoved = 0
+        mangaRepository.getFavoritesBySourceId(sourceId).first()
+            .filter { it.url !in pcKeys }
+            .forEach { stale ->
+                runCatching {
+                    mangaRepository.update(MangaUpdate(id = stale.id, favorite = false))
+                    orphansRemoved++
+                }
+            }
+        // tidyFiles <--
+
+        if (newlyAdded.isNotEmpty() || categorised > 0 || progressSynced > 0 || orphansRemoved > 0) {
             Log.i(
                 TAG,
                 "同步完成：新增 ${newlyAdded.size} 本，重設分類 $categorised 本，" +
-                    "讀書狀態跟 PC 更新 $progressSynced 卷",
+                    "讀書狀態跟 PC 更新 $progressSynced 卷，孤兒移出 $orphansRemoved 本",
             )
         }
     }
