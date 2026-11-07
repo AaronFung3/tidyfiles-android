@@ -175,6 +175,9 @@ class LibraryPreferences(
     // tidyFiles -->
     /** 書架「一堆堆」分組顯示：有 tag 按 tag 分堆，冇 tag 就按書名開頭分堆。 */
     fun folderGroups() = preferenceStore.getBoolean("display_folder_groups", true)
+
+    /** 分堆準則：「tag」（預設，有 tag 按 tag、冇 tag 按書名開頭）定「author」（按作者）。 */
+    fun folderGroupMode() = preferenceStore.getString("display_folder_group_mode", "tag")
     // tidyFiles <--
 
     // KMK -->

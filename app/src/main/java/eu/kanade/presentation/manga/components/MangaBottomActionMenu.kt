@@ -264,6 +264,9 @@ fun LibraryBottomActionMenu(
     onClickAddToMangaDex: (() -> Unit)?,
     onClickResetInfo: (() -> Unit)?,
     // SY <--
+    // tidyFiles --> 選中嘅全部係 tidyFiles 來源先顯示（批量評分／讀完／加 tag）
+    onTidyFilesBulkClicked: (() -> Unit)? = null,
+    // tidyFiles <--
     modifier: Modifier = Modifier,
 ) {
     AnimatedVisibility(
@@ -398,6 +401,14 @@ fun LibraryBottomActionMenu(
                             )
                         }
                         // KMK <--
+                        // tidyFiles --> PC 批量：一次過改 PC 端評分／讀完／tag
+                        if (onTidyFilesBulkClicked != null) {
+                            DropdownMenuItem(
+                                text = { Text(text = "PC 批量（評分／讀完／tag）") },
+                                onClick = onTidyFilesBulkClicked,
+                            )
+                        }
+                        // tidyFiles <--
                     }
                 }
             }

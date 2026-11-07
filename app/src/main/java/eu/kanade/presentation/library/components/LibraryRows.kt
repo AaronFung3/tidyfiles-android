@@ -14,8 +14,10 @@ import eu.kanade.tachiyomi.ui.library.LibraryItem
 /**
  * tidyFiles：書架「一堆堆」分組。
  *
- * 有 tag（ComicInfo 嘅 Genre／Tags，來源已經放落 manga.genre）就按 tag 分堆，
- * 一本書有幾個 tag 就會出現喺幾堆；冇 tag 就按書名開頭分堆（0-9／A-Z／其他）。
+ * mode = "tag"（預設）：有 tag（ComicInfo 嘅 Genre／Tags，來源已經放落 manga.genre）
+ * 就按 tag 分堆，一本書有幾個 tag 就會出現喺幾堆；冇 tag 就按書名開頭分堆
+ * （0-9／A-Z／其他）。
+ * mode = "author"：按作者（manga.author）分堆，冇作者嘅落「（冇作者）」一堆。
  */
 internal sealed interface LibraryRow {
     data class Header(val name: String, val count: Int) : LibraryRow
@@ -24,15 +26,33 @@ internal sealed interface LibraryRow {
 
 private const val OTHER_GROUP = "其他"
 private const val DIGIT_GROUP = "0-9"
+private const val NO_AUTHOR = "（冇作者）"
 
-internal fun buildLibraryRows(items: List<LibraryItem>): List<LibraryRow> {
+internal fun buildLibraryRows(items: List<LibraryItem>, mode: String = "tag"): List<LibraryRow> {
     if (items.size < 2) return emptyList()
+    val grouped: List<Pair<String, List<LibraryItem>>> = when (mode) {
+        "author" -> groupByAuthor(items)
+        else -> groupByTagOrTitle(items)
+    }
+
+    // 得一組嘅話標題只係噪音（睇落同冇分組一樣），索性唔分
+    if (grouped.size <= 1) return emptyList()
+
+    return grouped.flatMap { (name, list) ->
+        buildList<LibraryRow> {
+            add(LibraryRow.Header(name, list.size))
+            list.forEach { add(LibraryRow.Manga(it)) }
+        }
+    }
+}
+
+private fun groupByTagOrTitle(items: List<LibraryItem>): List<Pair<String, List<LibraryItem>>> {
     val hasTags = items.any { !it.libraryManga.manga.genre.isNullOrEmpty() }
     // 冇 tag 而書名全部係雜湊字串（PC 書庫未打 tag 時）→ 分組冇意義，
     // 唔好出一個「0-9 全部」嘅假標題。
     if (!hasTags && items.all { looksLikeHash(it.libraryManga.manga.title) }) return emptyList()
 
-    val grouped: List<Pair<String, List<LibraryItem>>> = if (hasTags) {
+    return if (hasTags) {
         val map = LinkedHashMap<String, MutableList<LibraryItem>>()
         items.forEach { item ->
             val tags = item.libraryManga.manga.genre.orEmpty().filter { it.isNotBlank() }
@@ -54,16 +74,17 @@ internal fun buildLibraryRows(items: List<LibraryItem>): List<LibraryRow> {
             .sortedBy { bucketOrder(it.key) }
             .map { it.key to it.value.toList() }
     }
+}
 
-    // 得一組嘅話標題只係噪音（睇落同冇分組一樣），索性唔分
-    if (grouped.size <= 1) return emptyList()
-
-    return grouped.flatMap { (name, list) ->
-        buildList<LibraryRow> {
-            add(LibraryRow.Header(name, list.size))
-            list.forEach { add(LibraryRow.Manga(it)) }
-        }
+private fun groupByAuthor(items: List<LibraryItem>): List<Pair<String, List<LibraryItem>>> {
+    val map = LinkedHashMap<String, MutableList<LibraryItem>>()
+    items.forEach { item ->
+        val author = item.libraryManga.manga.author?.trim().orEmpty()
+        map.getOrPut(author.ifEmpty { NO_AUTHOR }) { mutableListOf() }.add(item)
     }
+    return map.entries
+        .sortedWith(compareBy({ it.key == NO_AUTHOR }, { it.key.lowercase() }))
+        .map { it.key to it.value.toList() }
 }
 
 /** 書名似 PC 書庫嘅雜湊資料夾名（例如 003d46cb1a…）就當冇可讀標題。 */

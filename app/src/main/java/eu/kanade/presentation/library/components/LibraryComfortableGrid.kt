@@ -27,12 +27,13 @@ internal fun LibraryComfortableGrid(
     // KMK <--
     // tidyFiles -->
     groupItems: Boolean = false,
+    groupMode: String = "tag",
     // tidyFiles <--
 ) {
     // tidyFiles -->
     // remember() 只可以喺 @Composable context 叫，所以喺 LazyGridScope 之前算好
-    val tidyRows: List<LibraryRow> = remember(items, groupItems) {
-        if (groupItems) buildLibraryRows(items) else emptyList()
+    val tidyRows: List<LibraryRow> = remember(items, groupItems, groupMode) {
+        if (groupItems) buildLibraryRows(items, groupMode) else emptyList()
     }
     // tidyFiles <--
     LazyLibraryGrid(

@@ -118,4 +118,72 @@ object TidyFilesApi {
     /** 手打 tag（整組取代；`tags` 空清單 ＝ 清走呢本書嘅手打 tag）。 */
     suspend fun setTags(rel: String, tags: List<String>): Result<Unit> =
         post("/api/view/tags", JSONObject().put("rel", rel).put("tags", org.json.JSONArray(tags)))
+
+    // ---- PC 批量＋新書 staging --------------------------------------------------
+    //
+    // PC 端 `POST /api/shelf/bulk`（`_gate(write=False)`，手機過 token 就得；
+    // 批量改 series／author PC 端自己會 403，手機 UI 唔開呢兩個 op）。
+
+    /** PC 端 `POST /api/shelf/bulk`：批量（rating 0–5／finished true/false／tags_add）。 */
+    suspend fun bulk(op: String, rels: List<String>, value: String): Result<Unit> =
+        post(
+            "/api/shelf/bulk",
+            JSONObject()
+                .put("op", op)
+                .put("rels", org.json.JSONArray(rels))
+                .put("value", value),
+        )
+
+    /**
+     * PC 端 `GET /api/incoming?all=1`：新書 staging 清單。
+     * item 欄位：id／status／name／size_text／pages／error／guess（series／volume／author／tags）／
+     * tags／over。status：downloading／ready／error／skipped／ingested／dropped。
+     */
+    suspend fun incomingList(): Result<org.json.JSONArray> = withContext(Dispatchers.IO) {
+        runCatching {
+            val prefs = Injekt.get<SourcePreferences>()
+            val base = prefs.tidyFilesUrl().get().trim().trimEnd('/')
+            val token = prefs.tidyFilesToken().get().trim()
+            if (base.isBlank() || token.isBlank()) throw Exception("未設定伺服器／授權碼")
+            val request = Request.Builder()
+                .url("$base/api/incoming?all=1")
+                .header("X-Token", token)
+                .header("User-Agent", "tidyFiles-android/1")
+                .build()
+            client().newCall(request).execute().use { response ->
+                val obj = JSONObject(response.body?.string().orEmpty().ifBlank { "{}" })
+                if (!response.isSuccessful || !obj.optBoolean("ok", false)) {
+                    throw Exception(obj.optString("error").ifBlank { "HTTP ${response.code}" })
+                }
+                obj.optJSONArray("items") ?: org.json.JSONArray()
+            }
+        }
+    }
+
+    /**
+     * PC 端 `POST /api/incoming/<action>`：save／ingest／skip／drop／retry。
+     * 全部只寫 staging（`E:\incoming\`）；ingest 會經 `library.write_cbz()` 入書庫。
+     */
+    suspend fun incomingAction(action: String, body: JSONObject): Result<JSONObject> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val prefs = Injekt.get<SourcePreferences>()
+                val base = prefs.tidyFilesUrl().get().trim().trimEnd('/')
+                val token = prefs.tidyFilesToken().get().trim()
+                if (base.isBlank() || token.isBlank()) throw Exception("未設定伺服器／授權碼")
+                val request = Request.Builder()
+                    .url("$base/api/incoming/$action")
+                    .header("X-Token", token)
+                    .header("User-Agent", "tidyFiles-android/1")
+                    .post(body.toString().toRequestBody(jsonType))
+                    .build()
+                client().newCall(request).execute().use { response ->
+                    val obj = JSONObject(response.body?.string().orEmpty().ifBlank { "{}" })
+                    if (!response.isSuccessful || !obj.optBoolean("ok", false)) {
+                        throw Exception(obj.optString("error").ifBlank { "HTTP ${response.code}" })
+                    }
+                    obj
+                }
+            }
+        }
 }

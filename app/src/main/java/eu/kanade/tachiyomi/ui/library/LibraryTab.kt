@@ -42,12 +42,13 @@ import eu.kanade.presentation.library.components.SyncFavoritesProgressDialog
 import eu.kanade.presentation.library.components.SyncFavoritesWarningDialog
 import eu.kanade.presentation.manga.components.LibraryBottomActionMenu
 import eu.kanade.presentation.more.onboarding.GETTING_STARTED_URL
-import eu.kanade.presentation.tidyfiles.TidyFilesManageDialog
+import eu.kanade.presentation.tidyfiles.TidyFilesBulkDialog
 import eu.kanade.presentation.util.Tab
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.data.download.DownloadCache
 import eu.kanade.tachiyomi.data.library.LibraryUpdateJob
 import eu.kanade.tachiyomi.data.sync.SyncDataJob
+import eu.kanade.tachiyomi.source.tidyfiles.TidyFilesSource
 import eu.kanade.tachiyomi.source.tidyfiles.TidyFilesTagKind
 import eu.kanade.tachiyomi.ui.browse.source.SourcesScreen
 import eu.kanade.tachiyomi.ui.browse.source.globalsearch.GlobalSearchScreen
@@ -256,6 +257,10 @@ data object LibraryTab : Tab {
                             context.toast(SYMR.strings.no_valid_entry)
                         }
                     },
+                    // tidyFiles --> PC 批量：選中嘅全部係 tidyFiles 來源先顯示
+                    onTidyFilesBulkClicked = { screenModel.showTidyFilesBulkDialog() }
+                        .takeIf { state.selectedManga.isNotEmpty() && state.selectedManga.fastAll { it.source == TidyFilesSource.ID } },
+                    // tidyFiles <--
                     onSelectionUpdateClicked = {
                         val started = screenModel.updateSelectedManga()
                         scope.launch {
@@ -299,9 +304,11 @@ data object LibraryTab : Tab {
                     )
                 }
                 else -> {
-                    // tidyFiles --> 分類 tab 入面嘅值 chips（作者／品質／其他）
+                    // tidyFiles --> 分類 tab 入面嘅值 chips（作者／品質／其他）＋ tag 面板
                     val tagKind = state.activeCategory?.name?.takeIf { it in TidyFilesTagKind.ALL }
-                    var tagChip by rememberSaveable(tagKind) { mutableStateOf<String?>(null) }
+                    // 選擇統一係 (kind, value)：row chips（kind tab 入面）同 tag 面板（任何 tab）共用
+                    var tagSelKind by rememberSaveable(tagKind) { mutableStateOf<String?>(null) }
+                    var tagSelValue by rememberSaveable(tagKind) { mutableStateOf<String?>(null) }
                     val tagChipValues = if (tagKind == null) {
                         emptyList()
                     } else {
@@ -315,6 +322,23 @@ data object LibraryTab : Tab {
                         }
                         counts.entries.sortedByDescending { it.value }.map { it.key to it.value }
                     }
+                    // tag 面板：三堆 tag（作者／品質／其他）全部攤開，連出現次數
+                    val tagPanelValues = state.activeCategory?.let { category ->
+                        val perKind = linkedMapOf<String, LinkedHashMap<String, Int>>()
+                        state.getItemsForCategory(category).forEach { item ->
+                            TidyFilesTagKind.ALL.forEach { kind ->
+                                TidyFilesTagKind.valuesOf(item.libraryManga.manga.genre, kind).forEach { v ->
+                                    val map = perKind.getOrPut(kind) { LinkedHashMap() }
+                                    map[v] = (map[v] ?: 0) + 1
+                                }
+                            }
+                        }
+                        TidyFilesTagKind.ALL.flatMap { kind ->
+                            (perKind[kind] ?: linkedMapOf())
+                                .entries.sortedByDescending { it.value }
+                                .map { Triple(kind, it.key, it.value) }
+                        }
+                    }.orEmpty()
                     // tidyFiles <--
                     LibraryContent(
                         categories = state.displayedCategories,
@@ -355,22 +379,28 @@ data object LibraryTab : Tab {
                         getDisplayMode = { screenModel.getDisplayMode() },
                         getColumnsForOrientation = { screenModel.getColumnsForOrientation(it) },
                         getItemsForCategory = { category ->
-                            val chip = tagChip
-                            val kind = tagKind
-                            if (kind == null || chip == null) {
+                            val selKind = tagSelKind
+                            val selValue = tagSelValue
+                            if (selKind == null || selValue == null) {
                                 state.getItemsForCategory(category)
                             } else {
                                 state.getItemsForCategory(category).filter {
-                                    TidyFilesTagKind.matches(it.libraryManga.manga.genre, kind, chip)
+                                    TidyFilesTagKind.matches(it.libraryManga.manga.genre, selKind, selValue)
                                 }
                             }
                         },
                         tagChips = tagChipValues,
-                        tagChipSelected = tagChip,
-                        onTagChipSelect = { tagChip = it },
-                        // tidyFiles --> 書櫃每行直接加標籤
-                        onEditTags = { manga -> screenModel.openTidyFilesManageDialog(manga.manga) },
-                        // tidyFiles <--
+                        tagChipSelected = tagSelValue.takeIf { tagSelKind == tagKind },
+                        onTagChipSelect = { value ->
+                            tagSelKind = if (value == null) null else tagKind
+                            tagSelValue = value
+                        },
+                        tagPanelValues = tagPanelValues,
+                        tagPanelSelected = tagSelKind?.let { kind -> tagSelValue?.let { value -> kind to value } },
+                        onTagPanelSelect = { kind, value ->
+                            tagSelKind = kind
+                            tagSelValue = value
+                        },
                     )
                 }
             }
@@ -407,12 +437,10 @@ data object LibraryTab : Tab {
                     },
                 )
             }
-            // tidyFiles --> 書櫃直接改 PC 手打 tag
-            is LibraryScreenModel.Dialog.TidyFilesManage -> {
-                TidyFilesManageDialog(
-                    rel = dialog.rel,
-                    title = dialog.title,
-                    tags = dialog.tags,
+            // tidyFiles --> PC 批量（評分／讀完／tag）
+            is LibraryScreenModel.Dialog.TidyFilesBulk -> {
+                TidyFilesBulkDialog(
+                    rels = dialog.rels,
                     onDismissRequest = onDismissRequest,
                 )
             }

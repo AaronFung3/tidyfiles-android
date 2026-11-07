@@ -1475,16 +1475,18 @@ class LibraryScreenModel(
         mutableState.update { it.copy(dialog = Dialog.DeleteManga(state.value.selectedManga)) }
     }
 
-    // tidyFiles --> 書櫃每行直接改 PC 手打 tag（唔使入詳情頁撳 3 點）
-    fun openTidyFilesManageDialog(manga: Manga) {
+    // tidyFiles --> PC 批量：選中嘅書逐本攞第一卷 rel 做錨點，交俾 PC /api/shelf/bulk
+    fun showTidyFilesBulkDialog() {
         screenModelScope.launchIO {
-            val rel = getChaptersByMangaId.await(manga.id, applyFilter = true)
-                .minByOrNull { it.sourceOrder }
-                ?.url
-                ?: return@launchIO
-            mutableState.update {
-                it.copy(dialog = Dialog.TidyFilesManage(rel, manga.title, manga.genre.orEmpty()))
-            }
+            val rels = state.value.selectedManga
+                .fastMapNotNull { manga ->
+                    getChaptersByMangaId.await(manga.id, applyFilter = true)
+                        .minByOrNull { it.sourceOrder }
+                        ?.url
+                }
+                .filter { it.isNotEmpty() }
+            if (rels.isEmpty()) return@launchIO
+            mutableState.update { it.copy(dialog = Dialog.TidyFilesBulk(rels)) }
         }
     }
     // tidyFiles <--
@@ -1501,11 +1503,9 @@ class LibraryScreenModel(
         ) : Dialog
         data class DeleteManga(val manga: List<Manga>) : Dialog
 
-        // tidyFiles --> 書櫃直接改 PC 手打 tag
-        data class TidyFilesManage(
-            val rel: String,
-            val title: String,
-            val tags: List<String>,
+        // tidyFiles --> PC 批量（評分／讀完／tag）
+        data class TidyFilesBulk(
+            val rels: List<String>,
         ) : Dialog
         // tidyFiles <--
 

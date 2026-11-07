@@ -46,9 +46,6 @@ fun LibraryPager(
     onClickManga: (Category, LibraryManga) -> Unit,
     onLongClickManga: (Category, LibraryManga) -> Unit,
     onClickContinueReading: ((LibraryManga) -> Unit)?,
-    // tidyFiles --> 書櫃每行直接加標籤
-    onEditTags: ((LibraryManga) -> Unit)? = null,
-    // tidyFiles <--
 ) {
     HorizontalPager(
         modifier = Modifier.fillMaxSize(),
@@ -84,10 +81,12 @@ fun LibraryPager(
 
         val onClickManga: (LibraryManga) -> Unit = { onClickManga(category, it) }
         val onLongClickManga: (LibraryManga) -> Unit = { onLongClickManga(category, it) }
-        // tidyFiles --> 書架「一堆堆」分組顯示（有 tag 按 tag，冇 tag 按書名開頭）
+        // tidyFiles --> 書架「一堆堆」分組顯示（準則：tag／作者，設定頁揀）
         // 用 collectAsState 才會跟住設定即時變；remember 只會攞第一次嘅值
         val folderGroupsPreference = remember { Injekt.get<LibraryPreferences>().folderGroups() }
         val groupItems by folderGroupsPreference.changes().collectAsState(initial = folderGroupsPreference.get())
+        val groupModePreference = remember { Injekt.get<LibraryPreferences>().folderGroupMode() }
+        val groupMode by groupModePreference.changes().collectAsState(initial = groupModePreference.get())
         // tidyFiles <--
 
         when (displayMode) {
@@ -101,7 +100,6 @@ fun LibraryPager(
                     onClickContinueReading = onClickContinueReading,
                     searchQuery = searchQuery,
                     onGlobalSearchClicked = onGlobalSearchClicked,
-                    onEditTags = onEditTags,
                 )
             }
             LibraryDisplayMode.CompactGrid, LibraryDisplayMode.CoverOnlyGrid -> {
@@ -117,7 +115,7 @@ fun LibraryPager(
                     searchQuery = searchQuery,
                     onGlobalSearchClicked = onGlobalSearchClicked,
                     groupItems = groupItems,
-                    onEditTags = onEditTags,
+                    groupMode = groupMode,
                 )
             }
             LibraryDisplayMode.ComfortableGrid -> {
@@ -132,6 +130,7 @@ fun LibraryPager(
                     searchQuery = searchQuery,
                     onGlobalSearchClicked = onGlobalSearchClicked,
                     groupItems = groupItems,
+                    groupMode = groupMode,
                 )
             }
             // KMK -->
@@ -148,6 +147,7 @@ fun LibraryPager(
                     onGlobalSearchClicked = onGlobalSearchClicked,
                     usePanoramaCover = true,
                     groupItems = groupItems,
+                    groupMode = groupMode,
                 )
             }
             // KMK <--

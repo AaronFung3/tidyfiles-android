@@ -7,10 +7,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -28,6 +31,7 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.presentation.components.AppBar
+import eu.kanade.presentation.tidyfiles.TidyFilesIncomingScreen
 import eu.kanade.presentation.util.Screen
 import tachiyomi.domain.library.service.LibraryPreferences
 import tachiyomi.i18n.MR
@@ -52,6 +56,8 @@ class SettingsTidyFilesScreen : Screen() {
         var url by remember { mutableStateOf(preferences.tidyFilesUrl().get()) }
         var token by remember { mutableStateOf(preferences.tidyFilesToken().get()) }
         var folderGroups by remember { mutableStateOf(libraryPreferences.folderGroups().get()) }
+        // tidyFiles: 分堆準則（tag／author）
+        var folderGroupMode by remember { mutableStateOf(libraryPreferences.folderGroupMode().get()) }
 
         Scaffold(
             topBar = {
@@ -106,6 +112,15 @@ class SettingsTidyFilesScreen : Screen() {
                     Text(stringResource(MR.strings.action_save))
                 }
 
+                // tidyFiles --> 新書 staging：手機逐本打 tag 入庫（PC 嘅 E:\incoming\）
+                OutlinedButton(
+                    onClick = { navigator.push(TidyFilesIncomingScreen()) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("新書 staging（打 tag 入庫）")
+                }
+                // tidyFiles <--
+
                 // tidyFiles: 書架「一堆堆」分組顯示
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -130,6 +145,37 @@ class SettingsTidyFilesScreen : Screen() {
                         },
                     )
                 }
+
+                // tidyFiles: 分堆準則（開咗分堆先揀）
+                if (folderGroups) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(24.dp),
+                    ) {
+                        listOf("tag" to "跟 tag 分堆", "author" to "跟作者分堆").forEach { (value, label) ->
+                            Row(
+                                modifier = Modifier.selectable(
+                                    selected = folderGroupMode == value,
+                                    onClick = {
+                                        folderGroupMode = value
+                                        libraryPreferences.folderGroupMode().set(value)
+                                    },
+                                ),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                RadioButton(
+                                    selected = folderGroupMode == value,
+                                    onClick = {
+                                        folderGroupMode = value
+                                        libraryPreferences.folderGroupMode().set(value)
+                                    },
+                                )
+                                Text(label)
+                            }
+                        }
+                    }
+                }
+                // tidyFiles <--
             }
         }
     }
