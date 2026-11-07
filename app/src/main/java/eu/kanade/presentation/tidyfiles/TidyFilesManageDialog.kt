@@ -1,10 +1,15 @@
 package eu.kanade.presentation.tidyfiles
 
 import android.widget.Toast
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -13,15 +18,19 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
 import eu.kanade.tachiyomi.source.tidyfiles.TidyFilesApi
 import eu.kanade.tachiyomi.source.tidyfiles.TidyFilesSource
 import eu.kanade.tachiyomi.source.tidyfiles.TidyFilesTagKind
@@ -67,6 +76,13 @@ fun TidyFilesManageDialog(
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
 
+    // tidyFiles --> 封面揀頁：攞頁數，出頭 24 頁縮圖俾用戶直接揀
+    var pageCount by remember { mutableStateOf(0) }
+    LaunchedEffect(rel) {
+        pageCount = TidyFilesApi.pageCount(rel)
+    }
+    // tidyFiles <--
+
     AlertDialog(
         onDismissRequest = { if (!busy) onDismissRequest() },
         title = { Text("PC 書庫管理") },
@@ -84,10 +100,49 @@ fun TidyFilesManageDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                // tidyFiles --> 封面揀頁：頭 24 頁縮圖直接睇圖揀，唔使盲填頁碼
+                Text(
+                    text = "封面用第幾頁",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (pageCount > 0) {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items((0 until minOf(pageCount, 24)).toList()) { page ->
+                            val selected = coverPage.toIntOrNull() == page
+                            AsyncImage(
+                                model = TidyFilesApi.thumbUrl(rel, page),
+                                contentDescription = "第 ${page + 1} 頁",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(width = 54.dp, height = 76.dp)
+                                    .clip(MaterialTheme.shapes.small)
+                                    .border(
+                                        width = if (selected) 3.dp else 1.dp,
+                                        color = if (selected) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.outlineVariant
+                                        },
+                                        shape = MaterialTheme.shapes.small,
+                                    )
+                                    .clickable { coverPage = page.toString() },
+                            )
+                        }
+                    }
+                    if (pageCount > 24) {
+                        Text(
+                            text = "得頭 24 頁有圖；要揀更後嘅頁就喺下面打數字",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                // tidyFiles <--
                 OutlinedTextField(
                     value = coverPage,
                     onValueChange = { coverPage = it.filter(Char::isDigit).take(4) },
-                    label = { Text("封面用第幾頁（0 ＝ 第一頁）") },
+                    label = { Text("頁碼（0 ＝ 第一頁）") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),

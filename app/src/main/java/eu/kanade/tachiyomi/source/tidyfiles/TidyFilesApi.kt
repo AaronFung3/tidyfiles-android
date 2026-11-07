@@ -135,6 +135,39 @@ object TidyFilesApi {
         )
 
     /**
+     * PC 端 `GET /api/view/pages`：呢本書有幾多頁（封面揀頁用；失敗回 0）。
+     * PC 端呢個 endpoint 淨係讀 ZIP 中央目錄，好快。
+     */
+    suspend fun pageCount(rel: String): Int = withContext(Dispatchers.IO) {
+        runCatching {
+            val prefs = Injekt.get<SourcePreferences>()
+            val base = prefs.tidyFilesUrl().get().trim().trimEnd('/')
+            val token = prefs.tidyFilesToken().get().trim()
+            if (base.isBlank() || token.isBlank()) return@runCatching 0
+            val request = Request.Builder()
+                .url(
+                    "$base/api/view/pages?rel=" + java.net.URLEncoder.encode(rel, "UTF-8") +
+                        "&lib=1&k=" + java.net.URLEncoder.encode(token, "UTF-8"),
+                )
+                .header("User-Agent", "tidyFiles-android/1")
+                .build()
+            client().newCall(request).execute().use { response ->
+                JSONObject(response.body?.string().orEmpty().ifBlank { "{}" }).optInt("n", 0)
+            }
+        }.getOrDefault(0)
+    }
+
+    /** 封面揀頁用嘅縮圖 URL（k=token 走 query，AsyncImage 直接 load 得）。 */
+    fun thumbUrl(rel: String, page: Int): String? {
+        val prefs = Injekt.get<SourcePreferences>()
+        val base = prefs.tidyFilesUrl().get().trim().trimEnd('/')
+        val token = prefs.tidyFilesToken().get().trim()
+        if (base.isBlank() || token.isBlank()) return null
+        return "$base/api/view/thumb?rel=" + java.net.URLEncoder.encode(rel, "UTF-8") +
+            "&n=$page&size=220&lib=1&k=" + java.net.URLEncoder.encode(token, "UTF-8")
+    }
+
+    /**
      * PC 端 `GET /api/incoming?all=1`：新書 staging 清單。
      * item 欄位：id／status／name／size_text／pages／error／guess（series／volume／author／tags）／
      * tags／over。status：downloading／ready／error／skipped／ingested／dropped。

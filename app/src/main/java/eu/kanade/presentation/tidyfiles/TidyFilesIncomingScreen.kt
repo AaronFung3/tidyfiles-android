@@ -33,10 +33,14 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.source.tidyfiles.TidyFilesApi
+import eu.kanade.tachiyomi.source.tidyfiles.TidyFilesSource
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
+import tachiyomi.domain.source.service.SourceManager
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
 
 /** staging 一本新書（`GET /api/incoming` 嘅 item，淨低 UI 要用嘅欄）。 */
 data class IncomingItem(
@@ -116,6 +120,8 @@ class TidyFilesIncomingScreen : Screen() {
         var loading by remember { mutableStateOf(false) }
         var loadError by remember { mutableStateOf<String?>(null) }
         val busyIds = remember { mutableStateListOf<Int>() }
+        // tidyFiles --> 貼 link 落載用
+        var link by remember { mutableStateOf("") }
         // 每本嘅可編輯欄位（keyed by id）
         val seriesText = remember { mutableStateOf<Map<Int, String>>(emptyMap()) }
         val volumeText = remember { mutableStateOf<Map<Int, String>>(emptyMap()) }
@@ -175,6 +181,14 @@ class TidyFilesIncomingScreen : Screen() {
                 TidyFilesApi.incomingAction(action, body).fold(
                     onSuccess = {
                         busyIds.remove(item.id)
+                        // tidyFiles --> 入完庫即刻重掃 PC 書架，本新書即刻喺書櫃見到
+                        if (action == "ingest") {
+                            runCatching {
+                                (Injekt.get<SourceManager>().get(TidyFilesSource.ID) as? TidyFilesSource)
+                                    ?.refreshNow()
+                            }
+                        }
+                        // tidyFiles <--
                         Toast.makeText(context, done, Toast.LENGTH_SHORT).show()
                         reload()
                     },
@@ -201,6 +215,43 @@ class TidyFilesIncomingScreen : Screen() {
                 contentPadding = PaddingValues(12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                // tidyFiles --> 貼 ZIP link 直接落 staging（PC 端背景下載，政策閘照過）
+                item(key = "__add") {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        OutlinedTextField(
+                            value = link,
+                            onValueChange = { link = it },
+                            label = { Text("貼 ZIP link 直接落 staging") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Button(
+                            enabled = link.isNotBlank(),
+                            onClick = {
+                                val url = link.trim()
+                                if (url.isEmpty()) return@Button
+                                scope.launch {
+                                    TidyFilesApi.incomingAction("url", JSONObject().put("url", url)).fold(
+                                        onSuccess = {
+                                            link = ""
+                                            Toast.makeText(context, "加咗落 staging", Toast.LENGTH_SHORT).show()
+                                            reload()
+                                        },
+                                        onFailure = {
+                                            Toast.makeText(context, it.message ?: "加唔到", Toast.LENGTH_LONG).show()
+                                        },
+                                    )
+                                }
+                            },
+                        ) {
+                            Text("加入")
+                        }
+                    }
+                }
+                // tidyFiles <--
                 if (loadError != null) {
                     item {
                         Text(
