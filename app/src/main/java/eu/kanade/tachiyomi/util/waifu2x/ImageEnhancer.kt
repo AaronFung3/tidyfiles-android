@@ -402,10 +402,14 @@ object ImageEnhancer {
             logcat(LogPriority.INFO) {
                 "ImageEnhancer: Visible frame $pageIndex/$pageVariant does not match target " +
                     "$targetPageIndex/$targetPageVariant " +
-                    "(secondary=$targetSecondaryPageIndex/$targetSecondaryPageVariant); queue stays held"
+                    "(secondary=$targetSecondaryPageIndex/$targetSecondaryPageVariant)"
             }
             // KMK <--
-            return
+            // tidyFiles --> 唔好再等「精確 match target」：fast scroll 嗰陣 target 不斷
+            // 前移，顯示 callback 永遠滯後一格格唔中，hold 會白等成 15 秒 timeout
+            // —— 個 hold 嘅本意只係「第一格原圖出咗未」，callback 行到嚟呢度就證明
+            // reader 已經喺度出原圖。任何一格都即刻放行。
+            // tidyFiles <--
         }
         waitingForVisibleImage = false
         visibleHoldSince = 0L

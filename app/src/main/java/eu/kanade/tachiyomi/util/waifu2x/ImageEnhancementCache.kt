@@ -367,7 +367,19 @@ object ImageEnhancementCache {
         }
         // Channel owns cleanup once send starts. Prompt cancellation can throw
         // even after delivery; recycling in a catch would race the cache writer.
-        saveQueue.send(request)
+        try {
+            saveQueue.send(request)
+        } catch (e: Throwable) {
+            // Sender-side cancellation: if the element never reached the channel,
+            // onUndeliveredElement never fires and the pending marker would block
+            // this page from EVER being re-enhanced (isSavePending stays true for
+            // the whole session). Release it here; for the delivered case the
+            // writer/onUndeliveredElement already owns it and this remove is a
+            // harmless no-op.
+            pendingSaveKeys.remove(request.cacheKey, request)
+            if (!bitmap.isRecycled) bitmap.recycle()
+            throw e
+        }
         return true
     }
     // KMK <--
