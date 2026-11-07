@@ -38,6 +38,7 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Done
 import androidx.compose.material.icons.outlined.DoneAll
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.Label
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.Schedule
@@ -235,6 +236,9 @@ fun MangaActionRow(
     onTrackingClicked: () -> Unit,
     onEditIntervalClicked: (() -> Unit)?,
     onEditCategory: (() -> Unit)?,
+    // tidyFiles --> PC 書庫管理（tidyFiles 來源先有；non-null ＝ 用 Tag 掣取代「在書櫃中」）
+    onTidyFilesManage: (() -> Unit)? = null,
+    // tidyFiles <--
     // SY -->
     onMergeClicked: (() -> Unit)?,
     // SY <--
@@ -247,17 +251,28 @@ fun MangaActionRow(
     val defaultActionButtonColor = MaterialTheme.colorScheme.onSurface.copy(alpha = DISABLED_ALPHA)
 
     Row(modifier = modifier.padding(start = 16.dp, top = 8.dp, end = 16.dp)) {
-        MangaActionButton(
-            title = if (favorite) {
-                stringResource(MR.strings.in_library)
-            } else {
-                stringResource(MR.strings.add_to_library)
-            },
-            icon = if (favorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-            color = if (favorite) MaterialTheme.colorScheme.primary else defaultActionButtonColor,
-            onClick = onAddToLibraryClicked,
-            onLongClick = onEditCategory,
-        )
+        // tidyFiles --> tidyFiles 來源嘅書由 PC 自動同步入書櫃，移出冇得反悔，
+        // 所以唔顯示「在書櫃中／加入書櫃」掣，個位直接畀「Tag」（PC 書庫管理）
+        if (onTidyFilesManage != null) {
+            MangaActionButton(
+                title = stringResource(MR.strings.action_edit_tags),
+                icon = Icons.Outlined.Label,
+                color = defaultActionButtonColor,
+                onClick = onTidyFilesManage,
+            )
+        } else {
+            MangaActionButton(
+                title = if (favorite) {
+                    stringResource(MR.strings.in_library)
+                } else {
+                    stringResource(MR.strings.add_to_library)
+                },
+                icon = if (favorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                color = if (favorite) MaterialTheme.colorScheme.primary else defaultActionButtonColor,
+                onClick = onAddToLibraryClicked,
+                onLongClick = onEditCategory,
+            )
+        }
         // tidyFiles --> 更新間隔／歷程（追蹤）／WebView／合併 全部移走，書內只留「在書櫃中」
     }
 }

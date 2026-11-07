@@ -1910,6 +1910,8 @@ class MangaScreenModel(
             val rel: String,
             val title: String,
             val tags: List<String>,
+            // tidyFiles --> 改名後清舊條目用
+            val oldKey: String = "",
         ) : Dialog
         // tidyFiles <--
 
@@ -1946,7 +1948,14 @@ class MangaScreenModel(
             ?.chapter?.url
             ?: return
         updateSuccessState {
-            it.copy(dialog = Dialog.TidyFilesManage(rel, it.manga.title, it.manga.genre.orEmpty()))
+            it.copy(
+                dialog = Dialog.TidyFilesManage(
+                    rel = rel,
+                    title = it.manga.title,
+                    tags = it.manga.genre.orEmpty(),
+                    oldKey = it.manga.url,
+                ),
+            )
         }
     }
     // tidyFiles <--

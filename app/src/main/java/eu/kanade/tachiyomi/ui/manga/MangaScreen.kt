@@ -652,6 +652,7 @@ class MangaScreen(
                     rel = dialog.rel,
                     title = dialog.title,
                     tags = dialog.tags,
+                    oldKey = dialog.oldKey,
                     onDismissRequest = screenModel::dismissDialog,
                 )
             }

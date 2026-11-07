@@ -14,10 +14,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.outlined.Label
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
@@ -87,8 +87,8 @@ fun MangaCompactGridItem(
     coverAlpha: Float = 1f,
     coverBadgeStart: @Composable (RowScope.() -> Unit)? = null,
     coverBadgeEnd: @Composable (RowScope.() -> Unit)? = null,
-    // tidyFiles --> 書櫃每格直接加標籤（唔使入詳情頁撳 3 點）
-    onClickEditTags: (() -> Unit)? = null,
+    // tidyFiles --> 標題下面顯示頭幾粒 tag（書櫃封面預覽）
+    tags: List<String>? = null,
     // tidyFiles <--
     // KMK -->
     libraryColored: Boolean = true,
@@ -137,30 +137,17 @@ fun MangaCompactGridItem(
                     CoverTextOverlay(
                         title = title,
                         onClickContinueReading = onClickContinueReading,
-                        onClickEditTags = onClickEditTags,
+                        tags = tags,
                     )
-                } else if (onClickContinueReading != null || onClickEditTags != null) {
-                    Row(
+                } else if (onClickContinueReading != null) {
+                    ContinueReadingButton(
+                        size = ContinueReadingButtonSizeLarge,
+                        iconSize = ContinueReadingButtonIconSizeLarge,
+                        onClick = onClickContinueReading,
                         modifier = Modifier
                             .padding(ContinueReadingButtonGridPadding)
                             .align(Alignment.BottomEnd),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        if (onClickEditTags != null) {
-                            TagButton(
-                                size = ContinueReadingButtonSizeLarge,
-                                iconSize = ContinueReadingButtonIconSizeLarge,
-                                onClick = onClickEditTags,
-                            )
-                        }
-                        if (onClickContinueReading != null) {
-                            ContinueReadingButton(
-                                size = ContinueReadingButtonSizeLarge,
-                                iconSize = ContinueReadingButtonIconSizeLarge,
-                                onClick = onClickContinueReading,
-                            )
-                        }
-                    }
+                    )
                 }
             },
         )
@@ -174,8 +161,8 @@ fun MangaCompactGridItem(
 private fun BoxScope.CoverTextOverlay(
     title: String,
     onClickContinueReading: (() -> Unit)? = null,
-    // tidyFiles --> 直接加標籤
-    onClickEditTags: (() -> Unit)? = null,
+    // tidyFiles --> 標題下面 tag 小 pill
+    tags: List<String>? = null,
     // tidyFiles <--
 ) {
     Box(
@@ -191,47 +178,49 @@ private fun BoxScope.CoverTextOverlay(
             .fillMaxWidth()
             .align(Alignment.BottomCenter),
     )
-    Row(
-        modifier = Modifier.align(Alignment.BottomStart),
-        verticalAlignment = Alignment.Bottom,
+    // tidyFiles --> 改做 Column：標題行下面可以疊 tag pill 行
+    Column(
+        modifier = Modifier
+            .align(Alignment.BottomStart)
+            .fillMaxWidth(),
     ) {
-        GridItemTitle(
-            modifier = Modifier
-                .weight(1f)
-                .padding(8.dp),
-            title = title,
-            style = MaterialTheme.typography.titleSmall.copy(
-                color = Color.White,
-                shadow = Shadow(
-                    color = Color.Black,
-                    blurRadius = 4f,
+        Row(verticalAlignment = Alignment.Bottom) {
+            GridItemTitle(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(8.dp),
+                title = title,
+                style = MaterialTheme.typography.titleSmall.copy(
+                    color = Color.White,
+                    shadow = Shadow(
+                        color = Color.Black,
+                        blurRadius = 4f,
+                    ),
                 ),
-            ),
-            minLines = 1,
-        )
-        if (onClickEditTags != null) {
-            TagButton(
-                size = ContinueReadingButtonSizeSmall,
-                iconSize = ContinueReadingButtonIconSizeSmall,
-                onClick = onClickEditTags,
-                modifier = Modifier.padding(
-                    end = 4.dp,
-                    bottom = ContinueReadingButtonGridPadding,
-                ),
+                minLines = 1,
             )
+            if (onClickContinueReading != null) {
+                ContinueReadingButton(
+                    size = ContinueReadingButtonSizeSmall,
+                    iconSize = ContinueReadingButtonIconSizeSmall,
+                    onClick = onClickContinueReading,
+                    modifier = Modifier.padding(
+                        end = ContinueReadingButtonGridPadding,
+                        bottom = ContinueReadingButtonGridPadding,
+                    ),
+                )
+            }
         }
-        if (onClickContinueReading != null) {
-            ContinueReadingButton(
-                size = ContinueReadingButtonSizeSmall,
-                iconSize = ContinueReadingButtonIconSizeSmall,
-                onClick = onClickContinueReading,
-                modifier = Modifier.padding(
-                    end = ContinueReadingButtonGridPadding,
-                    bottom = ContinueReadingButtonGridPadding,
-                ),
+        if (!tags.isNullOrEmpty()) {
+            TagPills(
+                tags = tags,
+                container = Color.White.copy(alpha = 0.24f),
+                content = Color.White,
+                modifier = Modifier.padding(start = 8.dp, bottom = 6.dp),
             )
         }
     }
+    // tidyFiles <--
 }
 
 /**
@@ -249,6 +238,9 @@ fun MangaComfortableGridItem(
     coverBadgeStart: @Composable (RowScope.() -> Unit)? = null,
     coverBadgeEnd: @Composable (RowScope.() -> Unit)? = null,
     onClickContinueReading: (() -> Unit)? = null,
+    // tidyFiles --> 標題下面 tag 小 pill
+    tags: List<String>? = null,
+    // tidyFiles <--
     // KMK -->
     libraryColored: Boolean = true,
     coverRatio: MutableFloatState = remember { mutableFloatStateOf(1f) },
@@ -352,6 +344,16 @@ fun MangaComfortableGridItem(
                 minLines = 2,
                 maxLines = titleMaxLines,
             )
+            // tidyFiles --> 標題下面 tag 小 pill
+            if (!tags.isNullOrEmpty()) {
+                TagPills(
+                    tags = tags,
+                    container = MaterialTheme.colorScheme.secondaryContainer,
+                    content = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.padding(start = 4.dp, bottom = 4.dp),
+                )
+            }
+            // tidyFiles <--
         }
     }
 }
@@ -473,9 +475,6 @@ fun MangaListItem(
     // KMK -->
     libraryColored: Boolean = true,
     // KMK <--
-    // tidyFiles --> 直接加標籤
-    onClickEditTags: (() -> Unit)? = null,
-    // tidyFiles <--
 ) {
     // KMK -->
     val bgColor = coverData.dominantCoverColors?.first?.let { Color(it) }.takeIf { libraryColored }
@@ -527,14 +526,6 @@ fun MangaListItem(
             style = MaterialTheme.typography.bodyMedium,
         )
         BadgeGroup(content = badge)
-        if (onClickEditTags != null) {
-            TagButton(
-                size = ContinueReadingButtonSizeSmall,
-                iconSize = ContinueReadingButtonIconSizeSmall,
-                onClick = onClickEditTags,
-                modifier = Modifier.padding(start = ContinueReadingButtonListSpacing),
-            )
-        }
         if (onClickContinueReading != null) {
             ContinueReadingButton(
                 size = ContinueReadingButtonSizeSmall,
@@ -572,28 +563,45 @@ private fun ContinueReadingButton(
     }
 }
 
-// tidyFiles --> 書櫃項目嘅「加標籤」掣（直接開分類對話框，唔使入詳情頁撳 3 點）
+// tidyFiles --> 書櫃封面／卡片標題下面嘅 tag 小 pill（頭 2 粒，多過就 +N）
 @Composable
-private fun TagButton(
-    size: Dp,
-    iconSize: Dp,
-    onClick: () -> Unit,
+private fun TagPills(
+    tags: List<String>,
+    container: Color,
+    content: Color,
     modifier: Modifier = Modifier,
 ) {
-    FilledIconButton(
-        onClick = onClick,
-        shape = MaterialTheme.shapes.small,
-        colors = IconButtonDefaults.filledIconButtonColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
-            contentColor = MaterialTheme.colorScheme.onSurface,
-        ),
-        modifier = modifier.size(size),
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Icon(
-            imageVector = Icons.Outlined.Label,
-            contentDescription = stringResource(MR.strings.action_edit_tags),
-            modifier = Modifier.size(iconSize),
-        )
+        tags.take(2).forEach { tag ->
+            Text(
+                text = tag,
+                fontSize = 9.sp,
+                lineHeight = 11.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = content,
+                modifier = Modifier
+                    .widthIn(max = 84.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(container)
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+            )
+        }
+        if (tags.size > 2) {
+            Text(
+                text = "+${tags.size - 2}",
+                fontSize = 9.sp,
+                lineHeight = 11.sp,
+                color = content,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(container)
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+            )
+        }
     }
 }
 // tidyFiles <--

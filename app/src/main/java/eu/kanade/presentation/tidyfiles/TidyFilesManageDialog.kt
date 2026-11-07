@@ -23,8 +23,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import eu.kanade.tachiyomi.source.tidyfiles.TidyFilesApi
+import eu.kanade.tachiyomi.source.tidyfiles.TidyFilesSource
 import eu.kanade.tachiyomi.source.tidyfiles.TidyFilesTagKind
 import kotlinx.coroutines.launch
+import tachiyomi.domain.manga.model.MangaUpdate
+import tachiyomi.domain.manga.repository.MangaRepository
+import tachiyomi.domain.source.service.SourceManager
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
 
 /**
  * 「PC 書庫管理」彈窗：直接改 PC 端嘅書（改書名／揀封面頁／手打 tag）。
@@ -35,8 +41,11 @@ import kotlinx.coroutines.launch
  *   · `POST /api/view/tags` —— 手打 tag（同 PC 網頁版同一個 `booktags.json`）
  *
  * `rel` 用第一卷嘅 rel 做錨點：tag／封面係「一本書」粒度，系列咁多卷就用第一卷
- * 代表（PC 端書架 chips 本來就會合埋所有卷嘅 tag）。改書名會令 PC 端 rel 變，
- * 但讀書狀態會由 PC 書簽反向同步補返（只前進唔後退）。
+ * 代表（PC 端書架 chips 本來就會合埋所有卷嘅 tag）。
+ *
+ * 存完會即刻重掃 PC 書架同步落本地（tag／書名唔使等下一次全域更新）。
+ * 改書名會令 PC 端 seriesKey 變 → 同步會出「新條目」；舊條目自動移出書櫃
+ * （只係本地書櫃唔再顯示，PC 檔案同讀書狀態一啲都唔郁）。
  */
 @Composable
 fun TidyFilesManageDialog(
@@ -44,6 +53,9 @@ fun TidyFilesManageDialog(
     title: String,
     tags: List<String>,
     onDismissRequest: () -> Unit,
+    // tidyFiles --> 改名後清舊條目用：開呢個彈窗嗰本書嘅 seriesKey（空 ＝ 跳過）
+    oldKey: String = "",
+    // tidyFiles <--
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -109,9 +121,13 @@ fun TidyFilesManageDialog(
                             .map { it.trim() }
                             .filter { it.isNotEmpty() }
                             .distinct()
+                        var renamed = false
                         if (cleanName.isNotEmpty() && cleanName != title) {
                             TidyFilesApi.rename(rel, cleanName).fold(
-                                onSuccess = { results += "書名改咗 ✓" },
+                                onSuccess = {
+                                    renamed = true
+                                    results += "書名改咗 ✓"
+                                },
                                 onFailure = { results += "書名改唔到：${it.message}" },
                             )
                         }
@@ -125,6 +141,23 @@ fun TidyFilesManageDialog(
                             onSuccess = { results += "Tag 存咗 ✓" },
                             onFailure = { results += "Tag 存唔到：${it.message}" },
                         )
+                        // tidyFiles --> 存完即刻同步：tag／書名／封面即刻跟返嚟，
+                        // 唔使等下一次全域更新。改咗名嘅話同步會出「新條目」，
+                        // 舊 seriesKey 喺 PC 已經冇咗 → 舊條目（即係開住呢個彈窗嗰本）
+                        // 移出書櫃（只係本地書櫃唔再顯示，唔刪任何檔案）。
+                        runCatching {
+                            val source = Injekt.get<SourceManager>()
+                                .get(TidyFilesSource.ID) as? TidyFilesSource
+                            val keys = source?.refreshNow().orEmpty()
+                            if (renamed && oldKey.isNotEmpty() && keys.isNotEmpty() && oldKey !in keys) {
+                                val repo = Injekt.get<MangaRepository>()
+                                repo.getMangaByUrlAndSourceId(oldKey, TidyFilesSource.ID)?.let { old ->
+                                    repo.update(MangaUpdate(id = old.id, favorite = false))
+                                    results += "舊條目已移出書櫃，書櫃會見到新條目"
+                                }
+                            }
+                        }
+                        // tidyFiles <--
                         busy = false
                         val text = results.joinToString("；")
                         message = text

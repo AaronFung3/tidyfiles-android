@@ -52,7 +52,8 @@ fun TidyFilesSetupScreen(
     val scope = rememberCoroutineScope()
     val sourcePreferences = remember { Injekt.get<SourcePreferences>() }
 
-    var url by remember { mutableStateOf(initialUrl.ifBlank { "http://100.78.220.22:8782" }) }
+    // tidyFiles --> 唔好預載任何私人地址（repo 係 public），淨空等用戶自己打
+    var url by remember { mutableStateOf(initialUrl) }
     var token by remember { mutableStateOf(initialToken) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -82,6 +83,7 @@ fun TidyFilesSetupScreen(
                 error = null
             },
             label = { Text("伺服器地址") },
+            placeholder = { Text("http://192.168.1.10:8766") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )

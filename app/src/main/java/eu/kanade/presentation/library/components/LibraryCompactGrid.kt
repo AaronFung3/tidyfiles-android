@@ -26,13 +26,13 @@ internal fun LibraryCompactGrid(
     onGlobalSearchClicked: () -> Unit,
     // tidyFiles -->
     groupItems: Boolean = false,
-    onEditTags: ((LibraryManga) -> Unit)? = null,
+    groupMode: String = "tag",
     // tidyFiles <--
 ) {
     // tidyFiles -->
     // remember() 只可以喺 @Composable context 叫，所以喺 LazyGridScope 之前算好
-    val tidyRows: List<LibraryRow> = remember(items, groupItems) {
-        if (groupItems) buildLibraryRows(items) else emptyList()
+    val tidyRows: List<LibraryRow> = remember(items, groupItems, groupMode) {
+        if (groupItems) buildLibraryRows(items, groupMode) else emptyList()
     }
     // tidyFiles <--
     LazyLibraryGrid(
@@ -65,7 +65,6 @@ internal fun LibraryCompactGrid(
                         onClick = onClick,
                         onLongClick = onLongClick,
                         onClickContinueReading = onClickContinueReading,
-                        onEditTags = onEditTags,
                     )
                 }
             }
@@ -82,7 +81,6 @@ internal fun LibraryCompactGrid(
                     onClick = onClick,
                     onLongClick = onLongClick,
                     onClickContinueReading = onClickContinueReading,
-                    onEditTags = onEditTags,
                 )
             }
             // tidyFiles -->
@@ -99,9 +97,6 @@ private fun CompactItem(
     onClick: (LibraryManga) -> Unit,
     onLongClick: (LibraryManga) -> Unit,
     onClickContinueReading: ((LibraryManga) -> Unit)?,
-    // tidyFiles --> 書櫃每格直接加標籤
-    onEditTags: ((LibraryManga) -> Unit)? = null,
-    // tidyFiles <--
 ) {
     val manga = libraryItem.libraryManga.manga
     MangaCompactGridItem(
@@ -130,10 +125,8 @@ private fun CompactItem(
         } else {
             null
         },
-        // tidyFiles --> 只限 tidyFiles 來源嘅書先有「改 tag」掣
-        onClickEditTags = onEditTags
-            ?.takeIf { libraryItem.libraryManga.manga.source == TidyFilesSource.ID }
-            ?.let { { it(libraryItem.libraryManga) } },
+        // tidyFiles --> 標題下面 tag 小 pill（tag 由 PC 同步入 genre）
+        tags = manga.genre.takeIf { manga.source == TidyFilesSource.ID },
         // tidyFiles <--
     )
 }

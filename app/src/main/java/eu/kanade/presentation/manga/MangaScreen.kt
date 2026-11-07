@@ -657,6 +657,9 @@ private fun MangaScreenSmallImpl(
                             onTrackingClicked = onTrackingClicked,
                             onEditIntervalClicked = onEditIntervalClicked,
                             onEditCategory = onEditCategoryClicked,
+                            // tidyFiles --> tidyFiles 來源：Tag 掣取代「在書櫃中」
+                            onTidyFilesManage = onTidyFilesManageClicked,
+                            // tidyFiles <--
                             // SY -->
                             onMergeClicked = onMergeClicked.takeUnless { state.showMergeInOverflow },
                             // SY <--
@@ -1108,6 +1111,9 @@ private fun MangaScreenLargeImpl(
                             onTrackingClicked = onTrackingClicked,
                             onEditIntervalClicked = onEditIntervalClicked,
                             onEditCategory = onEditCategoryClicked,
+                            // tidyFiles --> tidyFiles 來源：Tag 掣取代「在書櫃中」
+                            onTidyFilesManage = onTidyFilesManageClicked,
+                            // tidyFiles <--
                             // SY -->
                             onMergeClicked = onMergeClicked.takeUnless { state.showMergeInOverflow },
                             // SY <--
