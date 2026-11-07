@@ -21,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -33,6 +34,8 @@ import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.tidyfiles.TidyFilesIncomingScreen
 import eu.kanade.presentation.util.Screen
+import eu.kanade.tachiyomi.source.tidyfiles.TidyFilesApi
+import kotlinx.coroutines.launch
 import tachiyomi.domain.library.service.LibraryPreferences
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
@@ -55,6 +58,8 @@ class SettingsTidyFilesScreen : Screen() {
 
         var url by remember { mutableStateOf(preferences.tidyFilesUrl().get()) }
         var token by remember { mutableStateOf(preferences.tidyFilesToken().get()) }
+        var busy by remember { mutableStateOf(false) }
+        val scope = rememberCoroutineScope()
         var folderGroups by remember { mutableStateOf(libraryPreferences.folderGroups().get()) }
         // tidyFiles: 分堆準則（tag／author）
         var folderGroupMode by remember { mutableStateOf(libraryPreferences.folderGroupMode().get()) }
@@ -103,9 +108,37 @@ class SettingsTidyFilesScreen : Screen() {
                 )
                 Button(
                     onClick = {
-                        preferences.tidyFilesUrl().set(url.trim())
-                        preferences.tidyFilesToken().set(token.trim())
-                        Toast.makeText(context, "已儲存", Toast.LENGTH_SHORT).show()
+                        if (busy) return@Button
+                        val cleanUrl = url.trim().trimEnd('/')
+                        val cleanToken = token.trim()
+                        if (cleanUrl.isBlank() || cleanToken.isBlank()) {
+                            Toast.makeText(context, "地址同 token 都要填。", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        busy = true
+                        scope.launch {
+                            // 6 位全數字 ＝ PC 端「配對手機」出嘅一次性配對碼：
+                            // 先去 PC 換真 token（5 分鐘內有效、用一次即死）再儲——
+                            // 同首次設定嗰版（TidyFilesSetupScreen）一樣邏輯，
+                            // 唔使自己抄成串 43 字 token 落手機。
+                            val realToken = if (cleanToken.length == 6 && cleanToken.all(Char::isDigit)) {
+                                TidyFilesApi.pair(cleanUrl, cleanToken) ?: run {
+                                    busy = false
+                                    Toast.makeText(
+                                        context,
+                                        "配對碼換唔到（過咗 5 分鐘／用咗／地址唔啱）。喺電腦 UI 撳「配對手機」再攞過。",
+                                        Toast.LENGTH_LONG,
+                                    ).show()
+                                    return@launch
+                                }
+                            } else {
+                                cleanToken
+                            }
+                            preferences.tidyFilesUrl().set(cleanUrl)
+                            preferences.tidyFilesToken().set(realToken)
+                            busy = false
+                            Toast.makeText(context, "已儲存", Toast.LENGTH_SHORT).show()
+                        }
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
