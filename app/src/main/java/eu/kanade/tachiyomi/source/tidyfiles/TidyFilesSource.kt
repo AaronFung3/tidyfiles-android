@@ -82,10 +82,18 @@ class TidyFilesSource(
 
     override suspend fun getSearchManga(page: Int, query: String, filters: FilterList): MangasPage {
         if (page > 1) return MangasPage(emptyList(), false)
-        val shelves = groupBySeries(fetchShelf(force = true))
+        val items = fetchShelf(force = true)
         val keyword = query.trim().lowercase()
-        if (keyword.isEmpty()) return MangasPage(shelves, false)
-        return MangasPage(shelves.filter { it.title.lowercase().contains(keyword) }, false)
+        if (keyword.isEmpty()) return MangasPage(groupBySeries(items), false)
+        // tidyFiles --> 唔淨只搜標題：tag／作者都搜（PC 手打 tag 搜唔返本書就係呢度漏）
+        val filtered = items.filter { item ->
+            item.name.lowercase().contains(keyword) ||
+                item.series.lowercase().contains(keyword) ||
+                (item.author.isNotEmpty() && item.author.lowercase().contains(keyword)) ||
+                item.tags.any { it.lowercase().contains(keyword) }
+        }
+        return MangasPage(groupBySeries(filtered), false)
+        // tidyFiles <--
     }
 
     override suspend fun getMangaUpdate(
@@ -211,6 +219,23 @@ class TidyFilesSource(
             )
         }
         TidyFilesSync.sync(series, id)
+    }
+
+    /**
+     * 「PC 書庫管理」彈窗儲存之後叫：即刻重掃 PC 書架＋同步落本地書庫，
+     * 令 tag／書名／封面唔使等下一次全域更新先更新。
+     * 回傳最新嘅 seriesKey 集合（空 ＝ 讀失敗），改名後偵測舊 key 冇咗用。
+     */
+    suspend fun refreshNow(): Set<String> {
+        shelfCache = null
+        shelfFetchedAt = 0L
+        TidyFilesSync.resetThrottle()
+        return try {
+            val items = fetchShelf(force = true)
+            items.map { it.seriesKey }.toSet()
+        } catch (e: Exception) {
+            emptySet()
+        }
     }
 
     private fun apiUrl(path: String, params: List<Pair<String, String>>): String {

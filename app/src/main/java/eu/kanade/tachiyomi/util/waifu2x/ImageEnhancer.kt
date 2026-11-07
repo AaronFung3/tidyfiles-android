@@ -63,16 +63,31 @@ object ImageEnhancer {
     // Model initialization/inference must not compete with the reader's first
     // original-image decode or replace it before its first frame is visible.
     private var waitingForVisibleImage = false
-    // KMK <--
+
+    // tidyFiles --> reset() 設 waitingForVisibleImage 嗰刻嘅時間；超過 15 秒未等到
+    // 「第一格原圖顯示」callback 就自動放行（個 queue 一直 held 住會令後面所有頁
+    // 嘅超分永遠唔開工 —— reset 之後顯示 callback 冇嚟/唔 match 就會咁）。
+    @Volatile
+    private var visibleHoldSince = 0L
+    // tidyFiles <--
 
     // tidyFiles --> 捲動中暫停超分（由 viewer 嘅 scroll state 控制）
     @Volatile
     private var scrolling = false
 
+    // setScrolling(true) 嘅時間。RecyclerView detached 咗就永遠收唔到 IDLE callback，
+    // flag 會卡喺 true —— 所以暫停最多 30 秒，之後照樣開工，唔會永久停擺。
+    @Volatile
+    private var scrollingSince = 0L
+
     fun setScrolling(value: Boolean) {
         if (scrolling == value) return
         scrolling = value
-        if (!value) queueSignal.trySend(Unit)
+        if (value) {
+            scrollingSince = System.currentTimeMillis()
+        } else {
+            queueSignal.trySend(Unit)
+        }
     }
     // tidyFiles <--
 
@@ -125,7 +140,7 @@ object ImageEnhancer {
         val cancelled = AtomicBoolean(false)
         val requeueOnCancel = AtomicBoolean(false)
 
-        private fun effectivePriority(): Int {
+        internal fun effectivePriority(): Int {
             return when {
                 pageIndex == targetPageIndex && pageVariant == targetPageVariant -> 3
                 pageIndex == targetSecondaryPageIndex && pageVariant == targetSecondaryPageVariant -> 2
@@ -166,10 +181,20 @@ object ImageEnhancer {
                         isFirstRequestAfterReset = false
                     }
 
-                    // tidyFiles --> 捲動中暫停超分：GPU／CPU 留返俾畫面渲染，減少卡頓
+                    // tidyFiles --> 捲動中暫停超分：GPU／CPU 留返俾畫面渲染，減少卡頓。
+                    // 兩個保險，唔好因為暫停令「某啲圖永遠唔 load」：
+                    //   1. 「而家睇緊嗰頁」（優先級 2/3）照做 —— 用戶見緊嗰頁嘅 HD 唔會卡住；
+                    //      淨係預載（優先級 0/1）hold 住，卡頓嗰個來源先係佢。
+                    //   2. scrolling flag 卡死（viewer detached、收唔到 IDLE）最多 30 秒。
                     if (scrolling) {
-                        kotlinx.coroutines.delay(120)
-                        continue
+                        val holdOver = System.currentTimeMillis() - scrollingSince > 30_000L
+                        val head = synchronized(this@ImageEnhancer) {
+                            if (waitingForVisibleImage) null else queue.peek()
+                        }
+                        if (!holdOver && (head == null || head.effectivePriority() < 2)) {
+                            kotlinx.coroutines.delay(120)
+                            continue
+                        }
                     }
                     // tidyFiles <--
 
@@ -343,8 +368,27 @@ object ImageEnhancer {
         isFirstRequestAfterReset = true
         initialTargetEnqueued = false
         waitingForVisibleImage = true
+        // tidyFiles --> 安全閘：15 秒後未等到「第一格原圖顯示」都自動放行個 queue
+        visibleHoldSince = System.currentTimeMillis()
+        scope.launch {
+            kotlinx.coroutines.delay(15_000L)
+            if (releaseVisibleHold("timeout")) queueSignal.trySend(Unit)
+        }
+        // tidyFiles <--
         logcat(LogPriority.DEBUG) { "ImageEnhancer: Resetting state to page $initialPageIndex" }
     }
+
+    // tidyFiles --> 放行 waitingForVisibleImage（reset 嘅 watchdog 同正常 callback 都會叫）；
+    // 回 true ＝ 係我放嘅（要補 signal）。
+    @Synchronized
+    private fun releaseVisibleHold(reason: String): Boolean {
+        if (!waitingForVisibleImage) return false
+        waitingForVisibleImage = false
+        visibleHoldSince = 0L
+        logcat(LogPriority.WARN) { "ImageEnhancer: visible-image hold released ($reason)" }
+        return true
+    }
+    // tidyFiles <--
 
     // KMK -->
     // Called once the reader shows the first original frame of the focused page;
@@ -364,6 +408,7 @@ object ImageEnhancer {
             return
         }
         waitingForVisibleImage = false
+        visibleHoldSince = 0L
         logcat(LogPriority.INFO) {
             "ImageEnhancer: First visible image displayed: $pageIndex/$pageVariant; releasing ${queue.size} queued requests"
         }

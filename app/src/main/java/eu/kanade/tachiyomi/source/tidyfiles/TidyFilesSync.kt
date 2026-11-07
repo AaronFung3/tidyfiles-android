@@ -55,7 +55,13 @@ object TidyFilesSync {
     private const val MIN_INTERVAL_MS = 30_000L
 
     private val mutex = Mutex()
-    private var lastSyncAt = 0L
+
+    @Volatile private var lastSyncAt = 0L
+
+    /** 管理彈窗存完 PC 之後叫：撤銷節流，等下一次 sync 真係行。 */
+    fun resetThrottle() {
+        lastSyncAt = 0L
+    }
 
     suspend fun sync(series: List<TidyFilesSeries>, sourceId: Long) {
         if (series.isEmpty()) return
@@ -103,6 +109,33 @@ object TidyFilesSync {
             // tidyFiles --> 用 PC 檔案日期做「加入書櫃日期」，已存在嘅書都會校正
             if (existing != null && item.dateAdded > 0L && item.dateAdded != manga.dateAdded) {
                 mangaRepository.update(MangaUpdate(id = manga.id, dateAdded = item.dateAdded))
+            }
+            // tidyFiles <--
+
+            // tidyFiles --> PC 改咗 tag／書名／簡介，已存在嘅書都要跟。
+            // 只更新「冇被用戶手動改過」嘅欄（顯示值 ＝ og 值先當冇改過），
+            // 否則會蓋走用戶喺「編輯資訊」度改嘅嘢。
+            if (existing != null) {
+                var update = MangaUpdate(id = manga.id)
+                var dirty = false
+                if (item.title != manga.title && manga.title == manga.ogTitle) {
+                    update = update.copy(title = item.title)
+                    dirty = true
+                }
+                val newGenre = item.tags.takeIf { it.isNotEmpty() }
+                if (newGenre != manga.genre && manga.genre == manga.ogGenre) {
+                    update = update.copy(genre = newGenre)
+                    dirty = true
+                }
+                if (item.description != manga.description && manga.description == manga.ogDescription) {
+                    update = update.copy(description = item.description)
+                    dirty = true
+                }
+                if (item.coverUrl != null && item.coverUrl != manga.thumbnailUrl) {
+                    update = update.copy(thumbnailUrl = item.coverUrl)
+                    dirty = true
+                }
+                if (dirty) mangaRepository.update(update)
             }
             // tidyFiles <--
 
