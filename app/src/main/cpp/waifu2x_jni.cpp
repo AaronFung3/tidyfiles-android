@@ -80,7 +80,11 @@ void force_monochrome_output(unsigned char *rgba, int width, int height,
 // use this host-thread affinity policy.
 extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *, void *) {
   configure_android_openmp();
-  LOGD("LLVM OpenMP CPU affinity disabled; flat topology enabled");
+  // Run the one-time parallel-initialise (incl. affinity discovery) right here,
+  // while the topology snapshot is fresh - never lazily on the first real
+  // upscale minutes later (that is where the assertion fired).
+  warmup_openmp_parallel_runtime();
+  LOGD("LLVM OpenMP CPU affinity disabled; flat topology enabled; parallel runtime warmed up");
   return JNI_VERSION_1_6;
 }
 

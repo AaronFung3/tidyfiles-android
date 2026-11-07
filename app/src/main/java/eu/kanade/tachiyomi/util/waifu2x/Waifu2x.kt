@@ -46,7 +46,29 @@ object Waifu2x {
 
     @Volatile private var isW2xExInitialized = false
 
+    // Serialises every heavy native entry point (init*/process*/scale/destroy/
+    // performance config). The ncnn net and its OpenMP runtime are NOT safe
+    // against concurrent use from different threads: today initRealCugan() can
+    // tear down and rebuild the net (nativeInitRealCugan takes the native
+    // g_lock) while another decoder thread is inside nativeScaleBitmap (which
+    // does not). abortProcessing() deliberately stays OUTSIDE this lock - the
+    // native side is a plain atomic store, and it must be able to interrupt a
+    // job that is currently holding the lock.
+    private val nativeSerial = Any()
+
     init {
+        // Must happen BEFORE System.loadLibrary: libomp snapshots its settings
+        // the first time anything touches the runtime, which can be during the
+        // dlopen's own static initialisers - before JNI_OnLoad gets a chance to
+        // call configure_android_openmp(). Same values as over there.
+        try {
+            android.system.Os.setenv("KMP_AFFINITY", "disabled", true)
+            android.system.Os.setenv("KMP_TOPOLOGY_METHOD", "flat", true)
+            android.system.Os.setenv("OMP_PROC_BIND", "false", true)
+            android.system.Os.unsetenv("OMP_PLACES")
+        } catch (_: Throwable) {
+            // Best effort - JNI_OnLoad still tries.
+        }
         try {
             System.loadLibrary("waifu2x-jni")
         } catch (e: UnsatisfiedLinkError) {
@@ -57,7 +79,7 @@ object Waifu2x {
     fun init(context: Context, noiseLevel: Int = 2, scale: Int = 2): Boolean {
         if (isInitialized) return true
 
-        return synchronized(this) {
+        return synchronized(nativeSerial) {
             if (isInitialized) return true
 
             val modelDir = extractModelsToCache(context, "waifu2x-models")
@@ -121,11 +143,11 @@ object Waifu2x {
             isRealCuganInitialized && lastRealCuganConfig == newConfig &&
             resolvedBackend == PROCESSING_BACKEND_VULKAN
         ) {
-            nativeUpdatePerformanceConfig(tileSleepMs, tileSize)
+            synchronized(nativeSerial) { nativeUpdatePerformanceConfig(tileSleepMs, tileSize) }
             return true
         }
 
-        return synchronized(this) {
+        return synchronized(nativeSerial) {
             val currentConfig = RealCuganConfig(
                 effectiveNoiseLevel,
                 scale,
@@ -142,7 +164,7 @@ object Waifu2x {
             }
 
             if (isRealCuganInitialized) {
-                nativeUpdatePerformanceConfig(tileSleepMs, tileSize)
+                synchronized(nativeSerial) { nativeUpdatePerformanceConfig(tileSleepMs, tileSize) }
                 return initializeBackend(
                     context,
                     resolvedBackend,
@@ -168,7 +190,7 @@ object Waifu2x {
             )
             if (isRealCuganInitialized) {
                 lastRealCuganConfig = currentConfig
-                nativeUpdatePerformanceConfig(tileSleepMs, tileSize)
+                synchronized(nativeSerial) { nativeUpdatePerformanceConfig(tileSleepMs, tileSize) }
 
                 // Invalidate all other models
                 isInitialized = false
@@ -208,7 +230,7 @@ object Waifu2x {
         precision: Int = 0,
         fp16Arithmetic: Boolean = false,
         processingBackend: Int = PROCESSING_BACKEND_VULKAN,
-    ): Boolean = synchronized(this) {
+    ): Boolean = synchronized(nativeSerial) {
         val isPhotoStyle = style == REAL_ESRGAN_STYLE_PHOTO
         val outputScale = if (isPhotoStyle) 2 else scale
         val resolvedBackend = resolveProcessingBackend(processingBackend, MODEL_REAL_ESRGAN_ANIME, outputScale)
@@ -221,7 +243,7 @@ object Waifu2x {
         }
 
         if (isRealEsrganInitialized) {
-            nativeUpdatePerformanceConfig(tileSleepMs, tileSize)
+            synchronized(nativeSerial) { nativeUpdatePerformanceConfig(tileSleepMs, tileSize) }
             return initializeBackend(
                 context,
                 resolvedBackend,
@@ -250,7 +272,7 @@ object Waifu2x {
         )
         if (isRealEsrganInitialized) {
             lastRealEsrganConfig = config
-            nativeUpdatePerformanceConfig(tileSleepMs, tileSize)
+            synchronized(nativeSerial) { nativeUpdatePerformanceConfig(tileSleepMs, tileSize) }
 
             // Invalidate all other models
             isInitialized = false
@@ -275,13 +297,13 @@ object Waifu2x {
     private data class GenericModelConfig(val precision: Int, val fp16Arithmetic: Boolean)
     private var lastNoseConfig: GenericModelConfig? = null
 
-    fun initNose(context: Context, tileSleepMs: Int = 0, tileSize: Int = 128, precision: Int = 0, fp16Arithmetic: Boolean = false): Boolean = synchronized(this) {
+    fun initNose(context: Context, tileSleepMs: Int = 0, tileSize: Int = 128, precision: Int = 0, fp16Arithmetic: Boolean = false): Boolean = synchronized(nativeSerial) {
         val config = GenericModelConfig(precision.coerceIn(0, 3), fp16Arithmetic)
         if (lastNoseConfig != config) {
             isNoseInitialized = false
         }
         if (isNoseInitialized) {
-            nativeUpdatePerformanceConfig(tileSleepMs, tileSize)
+            synchronized(nativeSerial) { nativeUpdatePerformanceConfig(tileSleepMs, tileSize) }
             return true
         }
 
@@ -293,7 +315,7 @@ object Waifu2x {
         isNoseInitialized = nativeInitNose(modelDir, config.precision, config.fp16Arithmetic)
         if (isNoseInitialized) {
             lastNoseConfig = config
-            nativeUpdatePerformanceConfig(tileSleepMs, tileSize)
+            synchronized(nativeSerial) { nativeUpdatePerformanceConfig(tileSleepMs, tileSize) }
 
             // Invalidate all other models
             isInitialized = false
@@ -312,7 +334,7 @@ object Waifu2x {
     private data class Waifu2xConfig(val noise: Int, val scale: Int, val precision: Int, val fp16Arithmetic: Boolean)
     private var lastWaifu2xConfig: Waifu2xConfig? = null
 
-    fun initWaifu2x(context: Context, noise: Int, scale: Int, tileSleepMs: Int = 0, tileSize: Int = 128, precision: Int = 0, fp16Arithmetic: Boolean = false): Boolean = synchronized(this) {
+    fun initWaifu2x(context: Context, noise: Int, scale: Int, tileSleepMs: Int = 0, tileSize: Int = 128, precision: Int = 0, fp16Arithmetic: Boolean = false): Boolean = synchronized(nativeSerial) {
         val newConfig = Waifu2xConfig(noise, scale, precision.coerceIn(0, 3), fp16Arithmetic)
 
         // Force reinit if config changed
@@ -322,7 +344,7 @@ object Waifu2x {
         }
 
         if (isWaifu2xInitialized) {
-            nativeUpdatePerformanceConfig(tileSleepMs, tileSize)
+            synchronized(nativeSerial) { nativeUpdatePerformanceConfig(tileSleepMs, tileSize) }
             return true
         }
 
@@ -332,7 +354,7 @@ object Waifu2x {
         isWaifu2xInitialized = nativeInit(modelDir, noise, scale, newConfig.precision, newConfig.fp16Arithmetic)
         if (isWaifu2xInitialized) {
             lastWaifu2xConfig = newConfig
-            nativeUpdatePerformanceConfig(tileSleepMs, tileSize)
+            synchronized(nativeSerial) { nativeUpdatePerformanceConfig(tileSleepMs, tileSize) }
 
             // Invalidate all other models
             isInitialized = false
@@ -347,7 +369,7 @@ object Waifu2x {
         isWaifu2xInitialized
     }
 
-    fun initWaifu2xUpconv7(context: Context, noise: Int, scale: Int, tileSleepMs: Int = 0, tileSize: Int = 128, precision: Int = 0, fp16Arithmetic: Boolean = false): Boolean = synchronized(this) {
+    fun initWaifu2xUpconv7(context: Context, noise: Int, scale: Int, tileSleepMs: Int = 0, tileSize: Int = 128, precision: Int = 0, fp16Arithmetic: Boolean = false): Boolean = synchronized(nativeSerial) {
         val newConfig = Waifu2xConfig(noise, scale, precision.coerceIn(0, 3), fp16Arithmetic)
 
         // Force reinit if config changed
@@ -357,7 +379,7 @@ object Waifu2x {
         }
 
         if (isWaifu2xInitialized) {
-            nativeUpdatePerformanceConfig(tileSleepMs, tileSize)
+            synchronized(nativeSerial) { nativeUpdatePerformanceConfig(tileSleepMs, tileSize) }
             return true
         }
 
@@ -367,7 +389,7 @@ object Waifu2x {
         isWaifu2xInitialized = nativeInitWaifu2xUpconv7(modelDir, noise, scale, newConfig.precision, newConfig.fp16Arithmetic)
         if (isWaifu2xInitialized) {
             lastWaifu2xConfig = newConfig
-            nativeUpdatePerformanceConfig(tileSleepMs, tileSize)
+            synchronized(nativeSerial) { nativeUpdatePerformanceConfig(tileSleepMs, tileSize) }
 
             // Invalidate all other models
             isInitialized = false
@@ -433,7 +455,7 @@ object Waifu2x {
         precision: Int = 0,
         fp16Arithmetic: Boolean = false,
         processingBackend: Int = PROCESSING_BACKEND_VULKAN,
-    ): Boolean = synchronized(this) {
+    ): Boolean = synchronized(nativeSerial) {
         val selectedModel = w2xExModelFor(model) ?: return false
         val effectiveScale = selectedModel.scale
         val modelDir = extractModelsToCache(context, selectedModel.assetPath) ?: return false
@@ -447,7 +469,7 @@ object Waifu2x {
         }
 
         if (isW2xExInitialized) {
-            nativeUpdatePerformanceConfig(tileSleepMs, tileSize)
+            synchronized(nativeSerial) { nativeUpdatePerformanceConfig(tileSleepMs, tileSize) }
             return initializeBackend(
                 context,
                 resolvedBackend,
@@ -466,7 +488,7 @@ object Waifu2x {
         )
         if (isW2xExInitialized) {
             lastW2xExConfig = config
-            nativeUpdatePerformanceConfig(tileSleepMs, tileSize)
+            synchronized(nativeSerial) { nativeUpdatePerformanceConfig(tileSleepMs, tileSize) }
 
             isInitialized = false
             isRealCuganInitialized = false
@@ -493,27 +515,27 @@ object Waifu2x {
     // But check specific flags
     // Reuse processRealCugan for all generic ncnn models
     // But check specific flags
-    fun processRealESRGAN(input: Bitmap, id: Int = -1): Bitmap? {
+    fun processRealESRGAN(input: Bitmap, id: Int = -1): Bitmap? = synchronized(nativeSerial) {
         if (!isRealEsrganInitialized) return null
-        return processBitmapHelper(input, id)
+        return processBitmapHelperLocked(input, id)
     }
 
-    fun processNose(input: Bitmap, id: Int = -1): Bitmap? {
+    fun processNose(input: Bitmap, id: Int = -1): Bitmap? = synchronized(nativeSerial) {
         if (!isNoseInitialized) return null
-        return processBitmapHelper(input, id)
+        return processBitmapHelperLocked(input, id)
     }
 
-    fun processWaifu2x(input: Bitmap, id: Int = -1): Bitmap? {
+    fun processWaifu2x(input: Bitmap, id: Int = -1): Bitmap? = synchronized(nativeSerial) {
         if (!isWaifu2xInitialized) return null
-        return processBitmapHelper(input, id)
+        return processBitmapHelperLocked(input, id)
     }
 
-    fun processW2xEx(input: Bitmap, id: Int = -1): Bitmap? {
+    fun processW2xEx(input: Bitmap, id: Int = -1): Bitmap? = synchronized(nativeSerial) {
         if (!isW2xExInitialized) return null
-        return processBitmapHelper(input, id)
+        return processBitmapHelperLocked(input, id)
     }
 
-    private fun processBitmapHelper(input: Bitmap, id: Int): Bitmap? {
+    private fun processBitmapHelperLocked(input: Bitmap, id: Int): Bitmap? {
         if (input.isRecycled) return null
 
         val argbBitmap = if (input.config != Bitmap.Config.ARGB_8888) {
@@ -562,7 +584,11 @@ object Waifu2x {
      * Reset Real-CUGAN to allow re-initialization with new settings.
      */
     @Synchronized
-    fun resetRealCugan() {
+    fun resetRealCugan() = synchronized(nativeSerial) {
+        resetRealCuganLocked()
+    }
+
+    private fun resetRealCuganLocked() {
         isInitialized = false
         isRealCuganInitialized = false
         isRealEsrganInitialized = false
@@ -585,22 +611,28 @@ object Waifu2x {
         nativeAbortProcessing()
     }
 
-    fun prepareProcessing() {
+    fun prepareProcessing() = synchronized(nativeSerial) {
+        // C side takes g_lock; serialising here too keeps abort→clear pairing
+        // clean (never clears the flag while a job sits between flag checks).
         nativeClearAbortProcessing()
     }
 
     /**
      * Process bitmap with Real-CUGAN.
      */
-    fun processRealCugan(input: Bitmap, id: Int = -1): Bitmap? {
+    fun processRealCugan(input: Bitmap, id: Int = -1): Bitmap? = synchronized(nativeSerial) {
         if (!isRealCuganInitialized) return null
-        return processBitmapHelper(input, id)
+        return processBitmapHelperLocked(input, id)
     }
 
     /**
      * Release native resources.
      */
-    fun destroy() {
+    fun destroy() = synchronized(nativeSerial) {
+        destroyLocked()
+    }
+
+    private fun destroyLocked() {
         if (isInitialized || isRealCuganInitialized || isRealEsrganInitialized || isNoseInitialized || isWaifu2xInitialized || isAnime4kInitialized || isW2xExInitialized) {
             nativeDestroy()
             isInitialized = false
@@ -643,15 +675,17 @@ object Waifu2x {
             return false
         }
 
-        isAnime4kInitialized = nativeInitAnime4K(shaders.toTypedArray(), names.toTypedArray())
-        // Invalidate all other models
-        if (isAnime4kInitialized) {
-            isInitialized = false
-            isRealCuganInitialized = false
-            isRealEsrganInitialized = false
-            isNoseInitialized = false
-            isWaifu2xInitialized = false
-            isW2xExInitialized = false
+        synchronized(nativeSerial) {
+            isAnime4kInitialized = nativeInitAnime4K(shaders.toTypedArray(), names.toTypedArray())
+            // Invalidate all other models
+            if (isAnime4kInitialized) {
+                isInitialized = false
+                isRealCuganInitialized = false
+                isRealEsrganInitialized = false
+                isNoseInitialized = false
+                isWaifu2xInitialized = false
+                isW2xExInitialized = false
+            }
         }
         return isAnime4kInitialized
     }
@@ -659,7 +693,11 @@ object Waifu2x {
     /**
      * Process bitmap with Anime4K.
      */
-    fun processAnime4K(input: Bitmap): Bitmap? {
+    fun processAnime4K(input: Bitmap): Bitmap? = synchronized(nativeSerial) {
+        processAnime4KLocked(input)
+    }
+
+    private fun processAnime4KLocked(input: Bitmap): Bitmap? {
         if (!isAnime4kInitialized || input.isRecycled) return null
 
         val argbBitmap = try {
@@ -837,7 +875,12 @@ object Waifu2x {
         }.getOrDefault(false)
     }
 
-    fun scaleBitmapNative(input: Bitmap, targetWidth: Int, targetHeight: Int): Bitmap? {
+    fun scaleBitmapNative(input: Bitmap, targetWidth: Int, targetHeight: Int): Bitmap? =
+        synchronized(nativeSerial) {
+            scaleBitmapNativeLocked(input, targetWidth, targetHeight)
+        }
+
+    private fun scaleBitmapNativeLocked(input: Bitmap, targetWidth: Int, targetHeight: Int): Bitmap? {
         if (input.isRecycled) return null
         if (input.width == targetWidth && input.height == targetHeight) return input
 
@@ -890,7 +933,7 @@ object Waifu2x {
 
     fun updatePerformance(tileSleepMs: Int, tileSize: Int) {
         if (isRealCuganInitialized || isRealEsrganInitialized || isNoseInitialized || isWaifu2xInitialized || isW2xExInitialized) {
-            nativeUpdatePerformanceConfig(tileSleepMs, tileSize)
+            synchronized(nativeSerial) { nativeUpdatePerformanceConfig(tileSleepMs, tileSize) }
         }
     }
 
