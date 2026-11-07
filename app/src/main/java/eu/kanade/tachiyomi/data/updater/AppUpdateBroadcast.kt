@@ -34,6 +34,7 @@ class AppUpdateBroadcast : BroadcastReceiver() {
                         // tidyFiles --> 裝完：清更新狀態，順手試自動開返 app
                         AppUpdateState.clear(context)
                         relaunchApp(context)
+                        deleteDownloadedApk(context)
                         // tidyFiles <--
                         appUpdateNotifier.onInstallFinished()
                     } finally {
@@ -75,8 +76,21 @@ class AppUpdateBroadcast : BroadcastReceiver() {
             // tidyFiles --> 自更新裝完會殺 process，呢個係新 process 收到嘅第一手機會：清狀態＋自動重開
             AppUpdateState.clear(context)
             relaunchApp(context)
+            deleteDownloadedApk(context)
             // tidyFiles <--
             appUpdateNotifier.onInstallFinished()
+        }
+    }
+
+    /**
+     * tidyFiles --> 裝完就清走下載嗰個 update.apk（~253MB）＋.url 記號，
+     * 唔好一直佔住 external cache。真正刪除之前有「永不覆寫」嗰套唔關事 ——
+     * 呢個只係 app 自己 cache 入面嘅更新檔。
+     */
+    private fun deleteDownloadedApk(context: Context) {
+        runCatching {
+            File(context.externalCacheDir, "update.apk").delete()
+            File(context.externalCacheDir, "update.apk.url").delete()
         }
     }
 
