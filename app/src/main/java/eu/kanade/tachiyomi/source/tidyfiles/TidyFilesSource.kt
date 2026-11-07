@@ -238,6 +238,12 @@ class TidyFilesSource(
         }
     }
 
+    /** 書櫃拉刷新嗰陣叫：清快取，下一次讀書架就真係重掃 PC（唔好用 5 分鐘前嘅資料）。 */
+    fun invalidateShelf() {
+        shelfCache = null
+        shelfFetchedAt = 0L
+    }
+
     private fun apiUrl(path: String, params: List<Pair<String, String>>): String {
         val builder = baseUrl.toHttpUrlOrNull()?.newBuilder()
             ?: throw Exception("tidyFiles：伺服器地址無效（$baseUrl）")

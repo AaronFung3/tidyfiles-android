@@ -73,6 +73,7 @@ import tachiyomi.domain.category.model.Category
 import tachiyomi.domain.library.model.LibraryGroup
 import tachiyomi.domain.library.model.LibraryManga
 import tachiyomi.domain.manga.model.Manga
+import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.i18n.MR
 import tachiyomi.i18n.kmk.KMR
 import tachiyomi.i18n.sy.SYMR
@@ -119,6 +120,10 @@ data object LibraryTab : Tab {
         val snackbarHostState = remember { SnackbarHostState() }
 
         val onClickRefresh: (Category?) -> Boolean = { category ->
+            // tidyFiles --> 拉刷新就真刷新：即刻重掃 PC 書架，唔好用 5 分鐘前嘅快取
+            (Injekt.get<SourceManager>().get(TidyFilesSource.ID) as? TidyFilesSource)
+                ?.invalidateShelf()
+            // tidyFiles <--
             // SY -->
             val started = LibraryUpdateJob.startNow(
                 context = context,
