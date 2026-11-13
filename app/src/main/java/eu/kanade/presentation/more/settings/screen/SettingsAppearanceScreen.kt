@@ -297,11 +297,7 @@ object SettingsAppearanceScreen : SearchableSettings {
                     preference = uiPreferences.expandFilters(),
                     title = stringResource(SYMR.strings.toggle_expand_search_filters),
                 ),
-                Preference.PreferenceItem.SwitchPreference(
-                    preference = uiPreferences.mergeInOverflow(),
-                    title = stringResource(SYMR.strings.put_merge_in_overflow),
-                    subtitle = stringResource(SYMR.strings.put_merge_in_overflow_summary),
-                ),
+                // tidyFiles --> 收埋「合併放喺溢出選單」：合併功能冇開
                 Preference.PreferenceItem.SliderPreference(
                     value = previewsRowCount,
                     valueRange = 0..10,

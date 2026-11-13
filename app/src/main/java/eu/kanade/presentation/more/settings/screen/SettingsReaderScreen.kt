@@ -101,7 +101,8 @@ object SettingsReaderScreen : SearchableSettings {
             ),
             SY <-- */
             getDisplayGroup(readerPreferences = readerPref),
-            getEInkGroup(readerPreferences = readerPref),
+            // tidyFiles --> 收埋 E-Ink（flash 閃頁）組：用戶唔用
+            // getEInkGroup(readerPreferences = readerPref),
             getReadingGroup(readerPreferences = readerPref),
             getPagedGroup(readerPreferences = readerPref),
             getWebtoonGroup(readerPreferences = readerPref),
@@ -242,13 +243,9 @@ object SettingsReaderScreen : SearchableSettings {
     private fun getPagedGroup(readerPreferences: ReaderPreferences): Preference.PreferenceGroup {
         val navModePref = readerPreferences.navigationModePager()
         val imageScaleTypePref = readerPreferences.imageScaleType()
-        val dualPageSplitPref = readerPreferences.dualPageSplitPaged()
-        val rotateToFitPref = readerPreferences.dualPageRotateToFit()
 
         val navMode by navModePref.collectAsState()
         val imageScaleType by imageScaleTypePref.collectAsState()
-        val dualPageSplit by dualPageSplitPref.collectAsState()
-        val rotateToFit by rotateToFitPref.collectAsState()
 
         // KMK -->
         val pagedDisableZoomInPref = readerPreferences.pagedDisableZoomIn()
@@ -338,33 +335,7 @@ object SettingsReaderScreen : SearchableSettings {
                     title = stringResource(MR.strings.pref_navigate_pan),
                     enabled = navMode != 5,
                 ),
-                Preference.PreferenceItem.SwitchPreference(
-                    preference = dualPageSplitPref,
-                    title = stringResource(MR.strings.pref_dual_page_split),
-                    onValueChanged = {
-                        rotateToFitPref.set(false)
-                        true
-                    },
-                ),
-                Preference.PreferenceItem.SwitchPreference(
-                    preference = readerPreferences.dualPageInvertPaged(),
-                    title = stringResource(MR.strings.pref_dual_page_invert),
-                    subtitle = stringResource(MR.strings.pref_dual_page_invert_summary),
-                    enabled = dualPageSplit,
-                ),
-                Preference.PreferenceItem.SwitchPreference(
-                    preference = rotateToFitPref,
-                    title = stringResource(MR.strings.pref_page_rotate),
-                    onValueChanged = {
-                        dualPageSplitPref.set(false)
-                        true
-                    },
-                ),
-                Preference.PreferenceItem.SwitchPreference(
-                    preference = readerPreferences.dualPageRotateToFitInvert(),
-                    title = stringResource(MR.strings.pref_page_rotate_invert),
-                    enabled = rotateToFit,
-                ),
+                // tidyFiles --> 收埋雙頁 split／invert／旋轉（用戶唔要雙頁）
             ),
         )
     }
@@ -374,13 +345,9 @@ object SettingsReaderScreen : SearchableSettings {
         val numberFormat = remember { NumberFormat.getPercentInstance() }
 
         val navModePref = readerPreferences.navigationModeWebtoon()
-        val dualPageSplitPref = readerPreferences.dualPageSplitWebtoon()
-        val rotateToFitPref = readerPreferences.dualPageRotateToFitWebtoon()
         val webtoonSidePaddingPref = readerPreferences.webtoonSidePadding()
 
         val navMode by navModePref.collectAsState()
-        val dualPageSplit by dualPageSplitPref.collectAsState()
-        val rotateToFit by rotateToFitPref.collectAsState()
         val webtoonSidePadding by webtoonSidePaddingPref.collectAsState()
 
         return Preference.PreferenceGroup(
@@ -443,33 +410,7 @@ object SettingsReaderScreen : SearchableSettings {
                     preference = readerPreferences.cropBordersWebtoon(),
                     title = stringResource(MR.strings.pref_crop_borders),
                 ),
-                Preference.PreferenceItem.SwitchPreference(
-                    preference = dualPageSplitPref,
-                    title = stringResource(MR.strings.pref_dual_page_split),
-                    onValueChanged = {
-                        rotateToFitPref.set(false)
-                        true
-                    },
-                ),
-                Preference.PreferenceItem.SwitchPreference(
-                    preference = readerPreferences.dualPageInvertWebtoon(),
-                    title = stringResource(MR.strings.pref_dual_page_invert),
-                    subtitle = stringResource(MR.strings.pref_dual_page_invert_summary),
-                    enabled = dualPageSplit,
-                ),
-                Preference.PreferenceItem.SwitchPreference(
-                    preference = rotateToFitPref,
-                    title = stringResource(MR.strings.pref_page_rotate),
-                    onValueChanged = {
-                        dualPageSplitPref.set(false)
-                        true
-                    },
-                ),
-                Preference.PreferenceItem.SwitchPreference(
-                    preference = readerPreferences.dualPageRotateToFitInvertWebtoon(),
-                    title = stringResource(MR.strings.pref_page_rotate_invert),
-                    enabled = rotateToFit,
-                ),
+                // tidyFiles --> 收埋雙頁 split／invert／旋轉（用戶唔要雙頁）
                 Preference.PreferenceItem.SwitchPreference(
                     preference = readerPreferences.webtoonDoubleTapZoomEnabled(),
                     title = stringResource(MR.strings.pref_double_tap_zoom),
@@ -543,11 +484,7 @@ object SettingsReaderScreen : SearchableSettings {
                     preference = readerPreferences.readWithLongTap(),
                     title = stringResource(MR.strings.pref_read_with_long_tap),
                 ),
-                Preference.PreferenceItem.SwitchPreference(
-                    preference = readerPreferences.folderPerManga(),
-                    title = stringResource(MR.strings.pref_create_folder_per_manga),
-                    subtitle = stringResource(MR.strings.pref_create_folder_per_manga_summary),
-                ),
+                // tidyFiles --> 收埋「每本漫畫開資料夾」：書留 PC，冇本地資料夾
             ),
         )
     }
@@ -574,12 +511,7 @@ object SettingsReaderScreen : SearchableSettings {
                     subtitle = stringResource(SYMR.strings.reader_preload_amount_summary),
                 ),
                 Preference.PreferenceItem.ListPreference(
-                    preference = readerPreferences.readerThreads(),
-                    title = stringResource(SYMR.strings.download_threads),
-                    subtitle = stringResource(SYMR.strings.download_threads_summary),
-                    entries = List(5) { it }.associateWith { it.toString() }.toImmutableMap(),
-                ),
-                Preference.PreferenceItem.ListPreference(
+                    // tidyFiles --> 收埋「下載執行緒數」：幾乎唔會掂，預設照行
                     preference = readerPreferences.cacheSize(),
                     title = stringResource(SYMR.strings.reader_cache_size),
                     subtitle = stringResource(SYMR.strings.reader_cache_size_summary),
@@ -617,11 +549,7 @@ object SettingsReaderScreen : SearchableSettings {
         return Preference.PreferenceGroup(
             title = stringResource(SYMR.strings.pref_category_fork),
             preferenceItems = persistentListOf(
-                Preference.PreferenceItem.SwitchPreference(
-                    preference = readerPreferences.readerInstantRetry(),
-                    title = stringResource(SYMR.strings.skip_queue_on_retry),
-                    subtitle = stringResource(SYMR.strings.skip_queue_on_retry_summary),
-                ),
+                // tidyFiles --> 收埋「重試跳過排隊」：排隊行為已由超分修復接管
                 Preference.PreferenceItem.SwitchPreference(
                     preference = readerPreferences.preserveReadingPosition(),
                     title = stringResource(SYMR.strings.preserve_reading_position),
@@ -662,15 +590,7 @@ object SettingsReaderScreen : SearchableSettings {
                     title = stringResource(SYMR.strings.center_margin),
                     subtitle = stringResource(SYMR.strings.pref_center_margin_summary),
                 ),
-                Preference.PreferenceItem.ListPreference(
-                    preference = readerPreferences.archiveReaderMode(),
-                    entries = ReaderPreferences.archiveModeTypes
-                        .mapIndexed { index, it -> index to stringResource(it) }
-                        .toMap()
-                        .toImmutableMap(),
-                    title = stringResource(SYMR.strings.pref_archive_reader_mode),
-                    subtitle = stringResource(SYMR.strings.pref_archive_reader_mode_summary),
-                ),
+                // tidyFiles --> 收埋「CBZ／壓縮檔讀檔模式」：書全部 PC 串流，冇本地壓縮檔
             ),
         )
     }
