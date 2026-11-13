@@ -185,7 +185,8 @@ object SettingsMainScreen : Screen() {
         val screen: VoyagerScreen,
     )
 
-    // tidyFiles --> 只留 5 項：外觀、書庫、閱讀器、tidyFiles 連線、關於（其餘功能頁全部隱藏）
+    // tidyFiles --> 只留 6 項：外觀、書庫、閱讀器、安全、tidyFiles 連線、關於
+    // （安全頁 2026-11-14 解封：私隱鎖／生物辨識鎖定喺入面；其餘功能頁照隱藏）
     private val tidyFilesHiddenScreens: Set<VoyagerScreen> = setOf(
         SettingsDownloadScreen,
         SettingsTrackingScreen,
@@ -193,7 +194,6 @@ object SettingsMainScreen : Screen() {
         SettingsMangadexScreen,
         SettingsDataScreen,
         SettingsBrowseScreen,
-        SettingsSecurityScreen,
         SettingsAdvancedScreen,
     )
     // tidyFiles <--
